@@ -2,7 +2,7 @@ import unittest
 import math
 from datetime import datetime, timezone
 
-from jev_router.registry import ModelSpec, eligible_models, validate_registry
+from jev_router.registry import ModelSpec, eligible_models, model_from_dict, validate_registry
 
 
 class RegistryTests(unittest.TestCase):
@@ -46,6 +46,12 @@ class RegistryTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             validate_registry(models)
+
+    def test_registry_rejects_string_booleans(self):
+        with self.assertRaises(ValueError):
+            model_from_dict({"id": "bad", "provider": "codex", "model": "sol", "approved": "false"})
+        with self.assertRaises(ValueError):
+            model_from_dict({"id": "bad", "provider": "codex", "model": "sol", "enabled": "false"})
 
 
 if __name__ == "__main__":

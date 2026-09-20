@@ -10,6 +10,7 @@ test_fake_now_health_is_not_fresh_without_fixture_label (test_cli.CliTests) ... 
 test_fixture_cannot_be_labeled_live (test_cli.CliTests) ... ok
 test_fixture_effectiveness_is_not_publishable (test_cli.CliTests) ... ok
 test_forged_runtime_rows_cannot_be_published (test_cli.CliTests) ... ok
+test_live_evaluation_does_not_promote_fixture_now_health (test_cli.CliTests) ... ok
 test_live_evidence_requires_external_hash_bound_scores (test_cli.CliTests) ... ok
 test_malformed_evaluation_input_returns_json_error (test_cli.CliTests) ... ok
 test_orchestration_with_duplicate_models_is_blocked (test_cli.CliTests) ... ok
@@ -42,10 +43,11 @@ test_orchestration_requires_positive_conservative_delta (test_policy.PolicyTests
 test_duplicate_ids_are_rejected (test_registry.RegistryTests) ... ok
 test_metadata_validation_rejects_negative_cost (test_registry.RegistryTests) ... ok
 test_metadata_validation_rejects_non_finite_cost (test_registry.RegistryTests) ... ok
+test_registry_rejects_string_booleans (test_registry.RegistryTests) ... ok
 test_unapproved_models_are_excluded (test_registry.RegistryTests) ... ok
 test_registry_round_trip_preserves_approval_and_metadata (test_registry_storage.RegistryStorageTests) ... ok
 
 ----------------------------------------------------------------------
-Ran 46 tests in 0.024s
+Ran 48 tests in 0.030s
 
 OK

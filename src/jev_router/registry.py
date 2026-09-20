@@ -158,11 +158,15 @@ def model_to_dict(model: ModelSpec) -> dict[str, Any]:
 
 
 def model_from_dict(data: Mapping[str, Any]) -> ModelSpec:
+    approved = data.get("approved", False)
+    enabled = data.get("enabled", True)
+    if not isinstance(approved, bool) or not isinstance(enabled, bool):
+        raise ValueError("approved and enabled must be booleans")
     return ModelSpec(
         id=str(data["id"]),
         provider=str(data["provider"]),
         model=str(data["model"]),
-        approved=bool(data.get("approved", False)),
+        approved=approved,
         kind=str(data.get("kind", data.get("provider", "codex"))),
         argv=tuple(str(value) for value in data.get("argv", ())),
         purpose=str(data.get("purpose", "")),
@@ -172,7 +176,7 @@ def model_from_dict(data: Mapping[str, Any]) -> ModelSpec:
         output_cost_per_1k=float(data.get("output_cost_per_1k", 0.0)),
         latency_prior_ms=float(data.get("latency_prior_ms", 0.0)),
         quality_prior=float(data.get("quality_prior", 0.5)),
-        enabled=bool(data.get("enabled", True)),
+        enabled=enabled,
     )
 
 

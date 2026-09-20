@@ -38,11 +38,11 @@ def _optional_path(value, config_path):
     return str(Path(config_path).expanduser().parent / target)
 
 
-def _health(config):
+def _health(config, allow_fixture_now=True):
     result = config.get("health", {})
     normalized = {}
     now = datetime.now(timezone.utc).isoformat()
-    fixture = config.get("evidence_class") == "fixture"
+    fixture = allow_fixture_now and config.get("evidence_class") == "fixture"
     for model_id, value in result.items():
         item = dict(value)
         if fixture and item.get("checked_at") == "now":
@@ -295,7 +295,7 @@ def cmd_evaluate(args):
                 scorer_key=os.environ.get("JEV_SCORER_KEY", ""),
                 scorer_id=os.environ.get("JEV_SCORER_ID", ""),
                 registry=validate_registry(models_from_config(evidence_config)),
-                health=_health(evidence_config),
+                health=_health(evidence_config, allow_fixture_now=False),
                 health_ttl=args.health_ttl,
             )
         weights = load_weights(args.weights)

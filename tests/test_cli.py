@@ -71,6 +71,40 @@ class CliTests(unittest.TestCase):
             self.assertEqual(json.loads(output.getvalue())["status"], "blocked")
             self.assertEqual(json.loads(output_path.read_text(encoding="utf-8"))["task_id"], "a")
 
+    def test_live_evaluation_does_not_promote_fixture_now_health(self):
+        captured = {}
+
+        def capture_health(rows, scores, **kwargs):
+            captured.update(kwargs)
+            return []
+
+        with tempfile.TemporaryDirectory() as directory:
+            input_path = Path(directory) / "benchmark.jsonl"
+            scores_path = Path(directory) / "scores.jsonl"
+            manifest_path = Path(directory) / "manifest.json"
+            input_path.write_text("", encoding="utf-8")
+            scores_path.write_text("", encoding="utf-8")
+            manifest_path.write_text("{}", encoding="utf-8")
+            output = io.StringIO()
+            with patch("jev_router.cli.merge_live_scores", side_effect=capture_health), contextlib.redirect_stdout(output):
+                code = main([
+                    "evaluate",
+                    "--config",
+                    "tests/fixtures/config.json",
+                    "--input",
+                    str(input_path),
+                    "--scores",
+                    str(scores_path),
+                    "--manifest",
+                    str(manifest_path),
+                    "--weights",
+                    "config/weights.toml",
+                    "--evidence-class",
+                    "live",
+                ])
+            self.assertEqual(code, 1)
+            self.assertEqual(captured["health"]["fixture-cheap"]["checked_at"], "now")
+
     def test_fake_now_health_is_not_fresh_without_fixture_label(self):
         model = ModelSpec(id="live", provider="codex", model="sol", approved=True)
         config = {"health": {"live": {"ok": True, "checked_at": "now"}}}

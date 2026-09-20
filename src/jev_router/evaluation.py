@@ -12,6 +12,7 @@ from .registry import ModelSpec, eligible_models, model_fingerprint
 
 _SCORE_SOURCES = {"human", "judge"}
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_BENCHMARK_ARMS = {"single", "static-team", "jev"}
 
 
 def _as_float(value, name):
@@ -175,6 +176,7 @@ def merge_live_scores(rows, scores, manifest=None, evidence_key="", scorer_key="
     if not isinstance(manifest_records, list):
         raise ValueError("execution manifest rows are missing")
     manifest_by_key = {}
+    manifest_arms_by_task = defaultdict(set)
     for item in manifest_records:
         if not isinstance(item, dict) or not isinstance(item.get("task_id"), str) or not isinstance(item.get("arm"), str):
             raise ValueError("execution manifest row key is invalid")
@@ -182,6 +184,9 @@ def merge_live_scores(rows, scores, manifest=None, evidence_key="", scorer_key="
         if key in manifest_by_key:
             raise ValueError("execution manifest contains duplicate rows")
         manifest_by_key[key] = item
+        manifest_arms_by_task[item["task_id"]].add(item["arm"])
+    if any(arms != _BENCHMARK_ARMS for arms in manifest_arms_by_task.values()):
+        raise ValueError("execution manifest requires exactly the three benchmark arms per task")
     for row in benchmark_rows:
         if not isinstance(row.get("task_id"), str) or not isinstance(row.get("arm"), str):
             raise ValueError("live evidence row key is invalid")
@@ -236,6 +241,11 @@ def merge_live_scores(rows, scores, manifest=None, evidence_key="", scorer_key="
         expected[key] = row
     if len(manifest_ids) != 1:
         raise ValueError("live evidence rows must share one execution manifest")
+    expected_arms_by_task = defaultdict(set)
+    for task_id, arm in expected:
+        expected_arms_by_task[task_id].add(arm)
+    if any(arms != _BENCHMARK_ARMS for arms in expected_arms_by_task.values()):
+        raise ValueError("live evidence requires exactly the three benchmark arms per task")
     manifest_task_ids = manifest.get("task_ids")
     expected_task_ids = {key[0] for key in expected}
     if not isinstance(manifest_task_ids, list) or not all(isinstance(task_id, str) for task_id in manifest_task_ids) or set(manifest_task_ids) != expected_task_ids:

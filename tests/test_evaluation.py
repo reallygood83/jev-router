@@ -111,6 +111,35 @@ class EvaluationTests(unittest.TestCase):
 
         self.assertEqual(merged[0]["quality"], 0.8)
         self.assertEqual(merged[0]["evidence_class"], "live")
+        extra_row = dict(rows[0], arm="extra")
+        extra_row["evidence_signature"] = sign_record(extra_row, "evidence-key", "evidence_signature")
+        extra_score = dict(scores[0], arm="extra")
+        extra_score["score_signature"] = sign_record(extra_score, "score-key", "score_signature")
+        extra_manifest = cast(dict[str, object], dict(manifest))
+        extra_records = list(cast(list[dict[str, object]], manifest["row_records"]))
+        extra_records.append(
+            {
+                "task_id": extra_row["task_id"],
+                "arm": extra_row["arm"],
+                "prompt_sha256": extra_row["prompt_sha256"],
+                "output_sha256": extra_row["output_sha256"],
+                "evidence_signature": extra_row["evidence_signature"],
+            }
+        )
+        extra_manifest["row_records"] = extra_records
+        extra_manifest["row_count"] = cast(int, manifest["row_count"]) + 1
+        extra_manifest["manifest_signature"] = sign_record(extra_manifest, "evidence-key", "manifest_signature")
+        with self.assertRaises(ValueError):
+            merge_live_scores(
+                rows + [extra_row],
+                scores + [extra_score],
+                manifest=extra_manifest,
+                evidence_key="evidence-key",
+                scorer_key="score-key",
+                scorer_id="reviewer-01",
+                registry=[model],
+                health=health,
+            )
         with self.assertRaises(ValueError):
             merge_live_scores(
                 rows[:0],
