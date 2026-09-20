@@ -10,7 +10,7 @@ def main(argv=None):
         description="Thin Jev role gate in front of OpenCodex.",
     )
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=10101)
+    parser.add_argument("--port", type=int, default=10111)
     parser.add_argument("--upstream", default="http://127.0.0.1:10100")
     parser.add_argument("--pack", default=str(default_pack_path()))
     args = parser.parse_args(argv)

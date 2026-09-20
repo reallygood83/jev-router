@@ -30,12 +30,13 @@
 <body>
 <main>
   <h1>Jev Gate</h1>
+  <p id="stale" class="lead bad" style="display:none"></p>
   <p class="lead">OpenCodex 앞에서 역할만 고릅니다. Jev는 모델 이름을 보지 않습니다. home일 때만 model과 추론 강도를 바꿉니다.</p>
   <section>
     <h2>연결</h2>
     <p id="health" class="status">확인 중…</p>
     <p id="keyStatus" class="hint">TypeSafe 키: 확인 중</p>
-    <p class="hint">게이트 <code>http://127.0.0.1:10101/v1</code> · 업스트림 OpenCodex <code>:10100</code></p>
+    <p class="hint">이 탭 주소가 게이트입니다. Codex Base URL은 같은 호스트의 <code>/v1</code>.</p>
   </section>
   <section>
     <h2>TypeSafe API</h2>
@@ -115,24 +116,11 @@ function optionList(models, selected, emptyLabel) {
 function effortList(selected) {
   return EFFORTS.map(v => `<option value="${v}" ${v === (selected || "") ? "selected" : ""}>${v || "(기본)"}</option>`).join("");
 }
-async function load() {
-  const [status, models, pack, events, secrets, install] = await Promise.all([
-    fetch("/api/status").then(r => r.json()),
+async function loadPackForm() {
+  const [models, pack] = await Promise.all([
     fetch("/v1/models").then(r => r.json()).catch(() => ({ data: [] })),
     fetch("/api/pack").then(r => r.json()),
-    fetch("/api/events").then(r => r.json()),
-    fetch("/api/secrets").then(r => r.json()),
-    fetch("/api/install").then(r => r.json()),
   ]);
-  const health = $("health");
-  if (status.opencodex_ok) {
-    health.className = "status ok";
-    health.textContent = "OpenCodex " + (status.opencodex_version || "ok") + " · 모델 " + ((models.data || []).length);
-  } else {
-    health.className = "status bad";
-    health.textContent = "OpenCodex 연결 실패. :10100이 켜져 있는지 보세요.";
-  }
-  $("keyStatus").textContent = (secrets.jev_key_set || status.jev_key_set) ? "TypeSafe 키: 설정됨" : "TypeSafe 키: 없음 (rewrite 없이 통과)";
   const list = models.data || [];
   $("home").innerHTML = optionList(list, pack.home_model, "(home 선택)");
   for (const role of ["implement", "research", "write"]) {
@@ -143,16 +131,41 @@ async function load() {
   }
   $("floor").value = pack.confidence_floor ?? 0.6;
   $("enabled").value = pack.enabled === false ? "false" : "true";
+}
+async function loadMeta() {
+  const [status, events, secretsRes, installRes] = await Promise.all([
+    fetch("/api/status").then(r => r.json()).catch(() => ({})),
+    fetch("/api/events").then(r => r.json()).catch(() => ({ events: [] })),
+    fetch("/api/secrets"),
+    fetch("/api/install").then(r => r.json()).catch(() => ({})),
+  ]);
+  const secrets = await secretsRes.json().catch(() => ({}));
+  const stale = $("stale");
+  if (secretsRes.status === 401 || secrets.error) {
+    stale.style.display = "block";
+    stale.textContent = "이 탭은 예전 게이트입니다. 키/팩 저장이 안 됩니다. 터미널에서 게이트를 재시작한 뒤 http://127.0.0.1:10111/ 를 여세요.";
+  } else {
+    stale.style.display = "none";
+  }
+  const health = $("health");
+  if (status.opencodex_ok) {
+    health.className = "status ok";
+    health.textContent = "OpenCodex " + (status.opencodex_version || "ok");
+  } else {
+    health.className = "status bad";
+    health.textContent = "OpenCodex 연결 실패. :10100이 켜져 있는지 보세요.";
+  }
+  $("keyStatus").textContent = secrets.jev_key_set ? "TypeSafe 키: 설정됨" : "TypeSafe 키: 없음 (rewrite 없이 통과)";
   $("events").innerHTML = (events.events || []).map(e =>
     `<tr><td>${e.at || ""}</td><td>${e.status}</td><td>${e.role}</td><td>${e.model_in}</td><td>${e.model_out}</td><td>${e.reasoning_effort || ""}</td><td>${e.confidence}</td></tr>`
   ).join("") || `<tr><td colspan="7">아직 없음</td></tr>`;
   const bits = [];
-  if ((install.skills || []).length) bits.push("스킬 " + install.skills.length + "곳");
-  if (install.mcp_codex) bits.push("Codex MCP");
-  if (install.mcp_claude) bits.push("Claude MCP");
+  if ((installRes.skills || []).length) bits.push("스킬 " + installRes.skills.length + "곳");
+  if (installRes.mcp_codex) bits.push("Codex MCP");
+  if (installRes.mcp_claude) bits.push("Claude MCP");
   $("installStatus").textContent = bits.length ? ("설치됨: " + bits.join(", ")) : "아직 설치 안 됨";
 }
-$("reload").onclick = load;
+$("reload").onclick = () => { loadPackForm(); loadMeta(); };
 $("save").onclick = async () => {
   const pack = { home_model: $("home").value, confidence_floor: Number($("floor").value), enabled: $("enabled").value === "true", roles: {} };
   const when = {
@@ -164,30 +177,32 @@ $("save").onclick = async () => {
     if ($(role).value) pack.roles[role] = { model: $(role).value, when: when[role], reasoning_effort: $(role + "Effort").value };
   }
   const res = await fetch("/api/pack", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(pack) });
-  $("saveMsg").textContent = res.ok ? "팩 저장됨" : "저장 실패";
-  load();
+  const body = await res.json().catch(() => ({}));
+  $("saveMsg").textContent = res.ok ? "팩 저장됨" : ("저장 실패 " + res.status + " " + (body.error || ""));
 };
 $("saveKey").onclick = async () => {
   const res = await fetch("/api/secrets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ typesafe_api_key: $("apiKey").value }) });
+  const body = await res.json().catch(() => ({}));
   $("apiKey").value = "";
-  $("keyMsg").textContent = res.ok ? "키 저장됨 (화면에 다시 안 보임)" : "키 저장 실패";
-  load();
+  $("keyMsg").textContent = res.ok ? "키 저장됨 (화면에 다시 안 보임)" : ("키 저장 실패 " + res.status + " " + (body.error || "예전 게이트입니다. :10111 을 여세요."));
+  loadMeta();
 };
 $("clearKey").onclick = async () => {
   await fetch("/api/secrets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clear: true }) });
   $("keyMsg").textContent = "키 삭제됨";
-  load();
+  loadMeta();
 };
 async function install(kind) {
   const res = await fetch("/api/install", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind }) });
-  const data = await res.json();
-  $("installMsg").textContent = data.ok ? (kind + " 설치됨") : (data.error || "실패");
-  load();
+  const data = await res.json().catch(() => ({}));
+  $("installMsg").textContent = data.ok ? (kind + " 설치됨") : (data.error || ("실패 " + res.status));
+  loadMeta();
 }
 $("installSkill").onclick = () => install("skill");
 $("installMcp").onclick = () => install("mcp");
-load();
-setInterval(load, 4000);
+loadPackForm();
+loadMeta();
+setInterval(loadMeta, 4000);
 </script>
 </body>
 </html>
