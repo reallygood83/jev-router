@@ -61,7 +61,7 @@ MIT
 
 ## Troubleshooting
 
-**Codex App shows "다시 연결 중" / reconnecting.** The gate must speak HTTP/1.1. Run `jev-gate` from this repo (0.3.2+). In the GUI, connection should show `gate 0.3.2 HTTP/1.1`. Then fully quit Codex (Cmd+Q) and reopen. `openai_base_url` must be `http://127.0.0.1:10115/v1`.
+**Codex App shows "다시 연결 중" / reconnecting.** Stop the old `jev-gate` and start a new one from this repo (0.3.2+). The proxy must speak HTTP/1.1 and must not re-chunk SSE streams. In the GUI, connection should show `gate 0.3.2 HTTP/1.1`. Then fully quit Codex (Cmd+Q) and reopen. `openai_base_url` must be `http://127.0.0.1:10115/v1`.
 
 **Pack or TypeSafe key will not save.** You are on a stale process that still proxies `/api` to OpenCodex (401) or crashes on `~/.config` permissions. Stop it and start `jev-gate` again. A second `jev-gate` on the same port replaces the previous one via a pid file.
 

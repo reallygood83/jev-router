@@ -74,7 +74,7 @@ def _filter_headers(headers):
 class GateHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     state: GateState
-    timeout = 120
+    timeout = 600
 
     def log_message(self, fmt, *args):
         print("[jev-gate] " + (fmt % args))
@@ -331,9 +331,10 @@ class GateHandler(BaseHTTPRequestHandler):
             self.send_response(upstream.status, upstream.reason)
             self._cors()
             for key, value in upstream.getheaders():
-                if key.lower() in HOP_BY_HOP:
+                lower = key.lower()
+                if lower in HOP_BY_HOP or lower.startswith("access-control-"):
                     continue
-                if key.lower() == "content-length":
+                if lower == "content-length":
                     continue
                 self.send_header(key, value)
             self.send_header("X-Jev-Gate", decision.get("status") or "pass")
@@ -342,9 +343,12 @@ class GateHandler(BaseHTTPRequestHandler):
             self.send_header("X-Jev-Model-In", str(decision.get("model_in") or ""))
             self.send_header("X-Jev-Model-Out", str(decision.get("model_out") or ""))
             up_len = upstream.getheader("Content-Length")
+            self.send_header("Connection", "close")
+            self.close_connection = True
             if up_len:
                 self.send_header("Content-Length", up_len)
-                self.end_headers()
+            self.end_headers()
+            if up_len:
                 remaining = int(up_len)
                 while remaining > 0:
                     chunk = upstream.read(min(8192, remaining))
@@ -352,18 +356,14 @@ class GateHandler(BaseHTTPRequestHandler):
                         break
                     self.wfile.write(chunk)
                     remaining -= len(chunk)
-                self.wfile.flush()
             else:
-                self.send_header("Transfer-Encoding", "chunked")
-                self.end_headers()
                 while True:
                     chunk = upstream.read(8192)
                     if not chunk:
                         break
-                    self.wfile.write(b"%x\r\n" % len(chunk) + chunk + b"\r\n")
+                    self.wfile.write(chunk)
                     self.wfile.flush()
-                self.wfile.write(b"0\r\n\r\n")
-                self.wfile.flush()
+            self.wfile.flush()
         except Exception as exc:
             if not self.wfile.closed:
                 try:
