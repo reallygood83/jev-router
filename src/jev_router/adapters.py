@@ -1,10 +1,10 @@
 import subprocess
 import time
-import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from .registry import eligible_models
+from .runtime import provider_environment
 
 
 def _model_flag(model):
@@ -59,9 +59,6 @@ def _latency(started):
 
 
 def _run(command, timeout):
-    environment = dict(os.environ)
-    for name in ("TYPESAFE_API_KEY", "JEV_EVIDENCE_KEY", "JEV_SCORER_KEY"):
-        environment.pop(name, None)
     return subprocess.run(
         command,
         cwd=str(Path.home()),
@@ -70,7 +67,7 @@ def _run(command, timeout):
         text=True,
         timeout=timeout,
         check=False,
-        env=environment,
+        env=provider_environment(command),
     )
 
 

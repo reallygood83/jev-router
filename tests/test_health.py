@@ -21,7 +21,7 @@ class HealthTests(unittest.TestCase):
             },
         }
 
-        eligible = eligible_models(models, health=health, now=now, ttl_seconds=3600)
+        eligible = eligible_models(models, health=health, now=now, ttl_seconds=3600, require_fingerprint=False)
 
         self.assertEqual([model.id for model in eligible], ["live"])
 
@@ -29,11 +29,12 @@ class HealthTests(unittest.TestCase):
         now = datetime.now(timezone.utc)
         model = ModelSpec(id="model", provider="codex", model="sol", approved=True)
 
-        missing = eligible_models([model], {"model": {"ok": True}}, now=now)
+        missing = eligible_models([model], {"model": {"ok": True}}, now=now, require_fingerprint=False)
         future = eligible_models(
             [model],
             {"model": {"ok": True, "checked_at": (now + timedelta(minutes=5)).isoformat()}},
             now=now,
+            require_fingerprint=False,
         )
 
         self.assertEqual(missing, [])
@@ -47,6 +48,7 @@ class HealthTests(unittest.TestCase):
             [model],
             {"model": {"ok": "true", "checked_at": now.isoformat()}},
             now=now,
+            require_fingerprint=False,
         )
 
         self.assertEqual(eligible, [])

@@ -15,6 +15,7 @@ class RegistryTests(unittest.TestCase):
         eligible = eligible_models(
             models,
             health={"approved": {"ok": True, "checked_at": datetime.now(timezone.utc).isoformat()}},
+            require_fingerprint=False,
         )
 
         self.assertEqual([model.id for model in eligible], ["approved"])

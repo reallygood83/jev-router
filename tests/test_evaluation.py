@@ -4,6 +4,7 @@ from typing import cast
 
 from jev_router.evaluation import evaluate_rows, merge_live_scores
 from jev_router.evidence import sign_record
+from jev_router.registry import ModelSpec, model_fingerprint
 
 
 class EvaluationTests(unittest.TestCase):
@@ -45,6 +46,7 @@ class EvaluationTests(unittest.TestCase):
 
     def test_live_score_is_bound_to_executed_output_hash(self):
         output_sha256 = hashlib.sha256(b"answer").hexdigest()
+        model = ModelSpec(id="model-1", provider="codex", model="sol", approved=True)
         rows = [{
             "task_id": "a",
             "arm": "single",
@@ -53,10 +55,13 @@ class EvaluationTests(unittest.TestCase):
             "output_sha256": output_sha256,
             "prompt_sha256": hashlib.sha256(b"prompt").hexdigest(),
             "execution_manifest_id": "manifest-1",
+            "execution_evidence_class": "live",
             "model_count": 1,
             "model_ids": ["model-1"],
+            "model_fingerprints": {"model-1": model_fingerprint(model)},
             "status": "ok",
             "route_source": "single",
+            "output_nonempty": True,
             "quality": 0.0,
         }]
         rows[0]["evidence_signature"] = sign_record(rows[0], "evidence-key", "evidence_signature")
@@ -67,15 +72,33 @@ class EvaluationTests(unittest.TestCase):
             "quality": 0.8,
             "source": "human",
             "scorer_id": "reviewer-01",
+            "execution_manifest_id": "manifest-1",
+            "prompt_sha256": rows[0]["prompt_sha256"],
+            "model_ids": rows[0]["model_ids"],
+            "model_fingerprints": rows[0]["model_fingerprints"],
         }]
         scores[0]["score_signature"] = sign_record(scores[0], "score-key", "score_signature")
 
-        merged = merge_live_scores(rows, scores, evidence_key="evidence-key", scorer_key="score-key")
+        merged = merge_live_scores(
+            rows,
+            scores,
+            evidence_key="evidence-key",
+            scorer_key="score-key",
+            scorer_id="reviewer-01",
+            registry=[model],
+        )
 
         self.assertEqual(merged[0]["quality"], 0.8)
         self.assertEqual(merged[0]["evidence_class"], "live")
         with self.assertRaises(ValueError):
-            merge_live_scores(rows, [dict(scores[0], output_sha256="0" * 64)], evidence_key="evidence-key", scorer_key="score-key")
+            merge_live_scores(
+                rows,
+                [dict(scores[0], output_sha256="0" * 64)],
+                evidence_key="evidence-key",
+                scorer_key="score-key",
+                scorer_id="reviewer-01",
+                registry=[model],
+            )
 
 
 if __name__ == "__main__":

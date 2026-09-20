@@ -8,6 +8,7 @@ from statistics import mean
 from pathlib import Path
 
 from .evidence import verify_record
+from .registry import ModelSpec, model_fingerprint
 
 _SCORE_SOURCES = {"human", "judge"}
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -144,13 +145,19 @@ def load_jsonl(path):
     return rows
 
 
-def merge_live_scores(rows, scores, evidence_key="", scorer_key=""):
+def merge_live_scores(rows, scores, evidence_key="", scorer_key="", scorer_id="", registry=None):
     evidence_key = evidence_key or os.environ.get("JEV_EVIDENCE_KEY", "").strip()
     scorer_key = scorer_key or os.environ.get("JEV_SCORER_KEY", "").strip()
+    scorer_id = scorer_id or os.environ.get("JEV_SCORER_ID", "").strip()
     if not evidence_key:
         raise ValueError("live evidence requires JEV_EVIDENCE_KEY")
     if not scorer_key:
         raise ValueError("live evidence requires JEV_SCORER_KEY")
+    if not scorer_id:
+        raise ValueError("live evidence requires JEV_SCORER_ID")
+    if registry is None:
+        raise ValueError("live evidence requires the approved model registry")
+    registered = {model.id: model for model in registry if isinstance(model, ModelSpec)}
     benchmark_rows = list(rows)
     expected = {}
     manifest_ids = set()
@@ -164,6 +171,8 @@ def merge_live_scores(rows, scores, evidence_key="", scorer_key=""):
         prompt_sha256 = row.get("prompt_sha256")
         if not isinstance(prompt_sha256, str) or not _SHA256.fullmatch(prompt_sha256):
             raise ValueError("live evidence requires a valid prompt_sha256 for every row")
+        if row.get("execution_evidence_class") != "live":
+            raise ValueError("fixture execution cannot be live evidence")
         manifest_id = row.get("execution_manifest_id")
         if not isinstance(manifest_id, str) or not manifest_id:
             raise ValueError("live evidence requires an execution manifest ID")
@@ -172,10 +181,19 @@ def merge_live_scores(rows, scores, evidence_key="", scorer_key=""):
         if not isinstance(model_count, int) or isinstance(model_count, bool) or model_count < 1:
             raise ValueError("live evidence requires at least one executed model per arm")
         model_ids = row.get("model_ids")
-        if not isinstance(model_ids, list) or len(model_ids) != model_count or not all(isinstance(model_id, str) and model_id for model_id in model_ids):
+        if not isinstance(model_ids, list) or len(model_ids) != model_count or not all(isinstance(model_id, str) and model_id for model_id in model_ids) or len(set(model_ids)) != len(model_ids):
             raise ValueError("live evidence requires the executed model IDs")
-        if row.get("status") not in {"ok", "failed"}:
-            raise ValueError("live evidence contains an invalid execution status")
+        if row.get("status") != "ok" or row.get("output_nonempty") is not True:
+            raise ValueError("live evidence requires successful non-empty executions")
+        fingerprints = row.get("model_fingerprints")
+        if not isinstance(fingerprints, dict) or set(fingerprints) != set(model_ids):
+            raise ValueError("live evidence requires model fingerprints for every executed model")
+        for model_id in model_ids:
+            model = registered.get(model_id)
+            if model is None or not model.approved or not model.enabled:
+                raise ValueError("live evidence contains a model outside the approved registry")
+            if fingerprints.get(model_id) != model_fingerprint(model):
+                raise ValueError("live evidence model fingerprint does not match the registry")
         if row.get("route_source") == "fixture":
             raise ValueError("fixture-backed routes cannot be live evidence")
         if row.get("arm") == "jev" and row.get("route_source") != "typesafe":
@@ -199,6 +217,11 @@ def merge_live_scores(rows, scores, evidence_key="", scorer_key=""):
             raise ValueError(f"duplicate live score for task {key[0]} arm {key[1]}")
         if score.get("output_sha256") != expected[key].get("output_sha256"):
             raise ValueError(f"score hash does not match output for task {key[0]} arm {key[1]}")
+        for name in ("execution_manifest_id", "prompt_sha256", "model_ids", "model_fingerprints"):
+            if score.get(name) != expected[key].get(name):
+                raise ValueError(f"score is not bound to execution manifest for task {key[0]} arm {key[1]}")
+        if score.get("scorer_id") != scorer_id:
+            raise ValueError("score scorer_id does not match JEV_SCORER_ID")
         if not verify_record(score, scorer_key, "score_signature"):
             raise ValueError("score signature is invalid")
         source = score.get("source")

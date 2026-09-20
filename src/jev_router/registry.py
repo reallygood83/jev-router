@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import os
+import shutil
 from pathlib import Path
 
 
@@ -48,7 +49,7 @@ def eligible_models(
     health: Mapping[str, Mapping[str, Any]],
     now: Optional[datetime] = None,
     ttl_seconds: int = 3600,
-    require_fingerprint: bool = False,
+    require_fingerprint: bool = True,
 ) -> list[ModelSpec]:
     if ttl_seconds < 0:
         raise ValueError("ttl_seconds must be non-negative")
@@ -81,12 +82,21 @@ def eligible_models(
 
 
 def model_fingerprint(model: ModelSpec) -> str:
+    executable = {
+        "codex": "codex",
+        "grok": "grok",
+        "claude": "claude",
+        "cursor": "agent",
+        "agent": "agent",
+        "kimi": "kimi",
+    }.get((model.kind or model.provider).lower(), model.kind or model.provider)
     payload = {
         "id": model.id,
         "provider": model.provider,
         "model": model.model,
         "kind": model.kind,
         "argv": list(model.argv),
+        "executable": shutil.which(executable) or executable,
     }
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()

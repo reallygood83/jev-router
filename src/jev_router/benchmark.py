@@ -9,6 +9,7 @@ from typing import cast
 from .adapters import execute_plan
 from .evidence import sign_record
 from .jev import JevClient, JevUnavailable, route_task
+from .registry import model_fingerprint
 
 
 def _tokens(text):
@@ -45,7 +46,21 @@ def _fixed_plan(mode, model_ids):
     }
 
 
-def run_benchmark(tasks, models, single_id, team_ids, jev_client, runner=None, seed=0, execute=False, health=None, health_ttl=3600, evidence_key="", require_fingerprint=True):
+def run_benchmark(
+    tasks,
+    models,
+    single_id,
+    team_ids,
+    jev_client,
+    runner=None,
+    seed=0,
+    execute=False,
+    health=None,
+    health_ttl=3600,
+    evidence_key="",
+    require_fingerprint=True,
+    evidence_class="live",
+):
     by_id = {model.id: model for model in models}
     if single_id not in by_id or len(team_ids) < 2 or any(model_id not in by_id for model_id in team_ids):
         raise ValueError("benchmark references unknown registered model")
@@ -102,6 +117,7 @@ def run_benchmark(tasks, models, single_id, team_ids, jev_client, runner=None, s
             output = result.get("output", "") or ""
             output_sha256 = hashlib.sha256(str(output).encode("utf-8")).hexdigest()
             executed_model_ids = [item.get("model_id") for item in cast(list[dict[str, object]], result.get("results", []))]
+            model_ids = executed_model_ids if execute else list(plan.get("worker_ids", []))
             row = {
                 "task_id": task_id,
                 "split": task.get("split", "holdout"),
@@ -112,19 +128,20 @@ def run_benchmark(tasks, models, single_id, team_ids, jev_client, runner=None, s
                 "failure_cost": 0.0 if result.get("ok") else 1.0,
                 "overhead": overhead / 1000,
                 "model_count": result.get("model_count", 0),
-                "model_ids": (
-                    executed_model_ids if execute else list(plan.get("worker_ids", []))
-                ),
+                "model_ids": model_ids,
+                "model_fingerprints": {model_id: model_fingerprint(by_id[model_id]) for model_id in model_ids if model_id in by_id},
                 "status": "ok" if result.get("ok") else "failed",
                 "route_source": plan.get("source", arm),
                 "evidence_class": "runtime_unscored" if execute else "fixture",
                 "executed": bool(execute),
                 "quality_source": "pending" if execute else "fixture",
                 "output_sha256": output_sha256,
+                "output_nonempty": bool(str(output).strip()),
                 "prompt_sha256": hashlib.sha256(str(prompt).encode("utf-8")).hexdigest(),
             }
             if execute:
                 row["execution_manifest_id"] = manifest_id
+                row["execution_evidence_class"] = evidence_class
                 if evidence_key:
                     row["evidence_signature"] = sign_record(row, evidence_key, "evidence_signature")
             rows.append(row)

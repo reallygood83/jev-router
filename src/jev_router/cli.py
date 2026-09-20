@@ -279,11 +279,14 @@ def cmd_evaluate(args):
         if args.evidence_class == "live":
             if not args.scores:
                 raise ValueError("live evidence requires --scores with external output-bound scores")
+            evidence_config = load_config(args.config)
             rows = merge_live_scores(
                 rows,
                 load_jsonl(args.scores),
                 evidence_key=os.environ.get("JEV_EVIDENCE_KEY", ""),
                 scorer_key=os.environ.get("JEV_SCORER_KEY", ""),
+                scorer_id=os.environ.get("JEV_SCORER_ID", ""),
+                registry=validate_registry(models_from_config(evidence_config)),
             )
         weights = load_weights(args.weights)
         result = evaluate_rows(rows, weights, seed=args.seed, bootstrap_samples=args.bootstrap_samples)
@@ -335,6 +338,7 @@ def cmd_benchmark(args):
             health_ttl=args.health_ttl,
             evidence_key=os.environ.get("JEV_EVIDENCE_KEY", ""),
             require_fingerprint=require_fingerprint,
+            evidence_class=config.get("evidence_class", "live"),
         )
     except (OSError, ValueError, JevUnavailable) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)}, ensure_ascii=False))

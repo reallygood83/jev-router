@@ -1,10 +1,10 @@
 import subprocess
 import time
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .registry import ModelSpec, model_fingerprint
+from .runtime import provider_environment
 
 
 _PROMPT = "Reply with exactly: OK"
@@ -32,9 +32,6 @@ def command_for_model(model):
 
 
 def _run(command, timeout):
-    environment = dict(os.environ)
-    for name in ("TYPESAFE_API_KEY", "JEV_EVIDENCE_KEY", "JEV_SCORER_KEY"):
-        environment.pop(name, None)
     completed = subprocess.run(
         command,
         cwd=str(Path.home()),
@@ -43,7 +40,7 @@ def _run(command, timeout):
         text=True,
         timeout=timeout,
         check=False,
-        env=environment,
+        env=provider_environment(command),
     )
     return completed.returncode, completed.stdout, completed.stderr
 

@@ -59,7 +59,7 @@ jev-router benchmark --config ~/.config/jev-router/config.json --tasks /path/to/
 jev-router evaluate --input artifacts/benchmark.jsonl --weights config/weights.toml --scores artifacts/scores.jsonl --output artifacts/effectiveness.md --evidence-class live
 ```
 
-Before a live run, provide two secrets outside the task and evidence files: `JEV_EVIDENCE_KEY` is used to sign the execution manifest and `JEV_SCORER_KEY` is used by the independent scoring process to sign score records. The router never passes either key to provider subprocesses.
+Before a live run, provide two secrets and one signer identity outside the task and evidence files: `JEV_EVIDENCE_KEY` is used to sign the execution manifest, while `JEV_SCORER_KEY` and `JEV_SCORER_ID` are used by the independent scoring process to sign score records. The router never passes these values to provider subprocesses.
 
 An executed benchmark records runtime metrics, prompt/output hashes, model count, route source, and an HMAC-signed execution manifest ID, but never treats task-authored quality as evidence. A separate `scores.jsonl` must contain one independently supplied and signed record per task and arm, with the matching `output_sha256`, `quality` from 0 to 1, `source` set to `human` or `judge`, and a non-empty `scorer_id`. Live publication also rejects fixture-backed routes, blocked executions, missing model runs, mismatched model fingerprints, and stale health records.
 
@@ -68,8 +68,10 @@ Prompts and provider output are not written to the JSONL evidence file. A score 
 Example score record:
 
 ```json
-{"task_id":"task-001","arm":"single","output_sha256":"...64 lowercase hex...","quality":0.82,"source":"human","scorer_id":"reviewer-01","score_signature":"...64 lowercase hex..."}
+{"task_id":"task-001","arm":"single","output_sha256":"...64 lowercase hex...","quality":0.82,"source":"human","scorer_id":"reviewer-01","execution_manifest_id":"...","prompt_sha256":"...64 lowercase hex...","model_ids":["provider:model"],"model_fingerprints":{"provider:model":"...64 lowercase hex..."},"score_signature":"...64 lowercase hex..."}
 ```
+
+The scoring process can use `jev_router.evidence.sign_record(record, JEV_SCORER_KEY, "score_signature")`; keep that process and key outside the task runner.
 
 ## 한국어
 
