@@ -13,7 +13,9 @@ from jev_router.jev import JevUnavailable
 from .classify import classify_task
 from .decide import decide
 from .extract import extract_task, thread_key
+from .install import install_mcp, install_skill, install_status
 from .pack import load_pack, save_pack
+from .secrets import key_is_set, save_key
 
 
 HOP_BY_HOP = {
