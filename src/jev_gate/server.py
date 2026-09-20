@@ -72,6 +72,7 @@ def _filter_headers(headers):
 
 
 class GateHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
     state: GateState
     timeout = 120
 
@@ -287,9 +288,30 @@ class GateHandler(BaseHTTPRequestHandler):
         result["status"] = install_status()
         return self._json(200, result)
 
-    def _proxy(self, patch=False):
+    def _read_body(self):
+        encoding = (self.headers.get("Transfer-Encoding") or "").lower()
+        if "chunked" in encoding:
+            chunks = []
+            while True:
+                size_line = self.rfile.readline()
+                if not size_line:
+                    break
+                size_text = size_line.split(b";", 1)[0].strip()
+                try:
+                    size = int(size_text, 16)
+                except ValueError:
+                    break
+                if size == 0:
+                    self.rfile.readline()
+                    break
+                chunks.append(self.rfile.read(size))
+                self.rfile.read(2)
+            return b"".join(chunks)
         length = int(self.headers.get("Content-Length") or 0)
-        raw = self.rfile.read(length) if length else b""
+        return self.rfile.read(length) if length else b""
+
+    def _proxy(self, patch=False):
+        raw = self._read_body() if self.command in {"POST", "PUT", "PATCH"} else b""
         decision = {"status": "pass", "role": "-", "confidence": 0, "model_in": "", "model_out": ""}
         if patch:
             raw, decision = self._classify_and_patch(raw)
