@@ -415,5 +415,3 @@ def make_server(host="127.0.0.1", port=10101, upstream="http://127.0.0.1:10100",
 
     httpd = ReuseServer((host, port), BoundHandler)
     return httpd, state
-eServer((host, port), BoundHandler)
-    return httpd, state
