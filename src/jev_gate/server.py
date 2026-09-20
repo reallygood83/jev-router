@@ -91,40 +91,60 @@ class GateHandler(BaseHTTPRequestHandler):
         self._cors()
         self.end_headers()
 
+    def _route(self):
+        return self.path.split("?", 1)[0]
+
     def do_GET(self):
-        if self.path in {"/", "/index.html"}:
+        path = self._route()
+        if path in {"/", "/index.html"}:
             return self._serve_index()
-        if self.path == "/api/pack":
+        if path == "/favicon.ico":
+            self.send_response(204)
+            self.end_headers()
+            return
+        if path == "/api/pack":
             return self._json(200, self.state.reload_pack())
-        if self.path == "/api/events":
+        if path == "/api/events":
             return self._json(200, {"events": list(self.state.events)})
-        if self.path == "/api/status":
+        if path == "/api/status":
             return self._json(200, self._status())
-        if self.path == "/api/secrets":
+        if path == "/api/secrets":
             return self._json(200, {"jev_key_set": key_is_set()})
-        if self.path == "/api/install":
+        if path == "/api/install":
             return self._json(200, install_status())
+        if path.startswith("/api/"):
+            return self._json(404, {"error": "unknown api"})
         return self._proxy()
 
     def do_PUT(self):
-        if self.path == "/api/pack":
+        path = self._route()
+        if path == "/api/pack":
             length = int(self.headers.get("Content-Length") or 0)
             raw = self.rfile.read(length) if length else b"{}"
             try:
                 payload = json.loads(raw.decode("utf-8"))
             except ValueError:
                 return self._json(400, {"error": "invalid json"})
-            pack = save_pack(payload, self.state.pack_path)
+            try:
+                pack = save_pack(payload, self.state.pack_path)
+            except OSError as exc:
+                return self._json(500, {"error": str(exc)})
             self.state.pack = pack
             return self._json(200, pack)
+        if path == "/api/secrets":
+            return self._save_secrets()
+        if path.startswith("/api/"):
+            return self._json(404, {"error": "unknown api"})
         return self._proxy()
 
     def do_POST(self):
-        path = self.path.split("?", 1)[0]
+        path = self._route()
         if path == "/api/secrets":
             return self._save_secrets()
         if path == "/api/install":
             return self._install()
+        if path.startswith("/api/"):
+            return self._json(404, {"error": "unknown api"})
         if path in PATCH_PATHS:
             return self._proxy(patch=True)
         return self._proxy()
