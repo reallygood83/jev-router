@@ -120,7 +120,7 @@ class GateHandler(BaseHTTPRequestHandler):
             return self._json(200, autostart_status())
         if path.startswith("/api/"):
             return self._json(404, {"error": "unknown api"})
-        if (self.headers.get("Upgrade") or "").lower() == "websocket":
+        if self._wants_websocket(path):
             return self._websocket_tunnel()
         return self._proxy()
 
@@ -343,6 +343,13 @@ class GateHandler(BaseHTTPRequestHandler):
             return b"".join(chunks)
         length = int(self.headers.get("Content-Length") or 0)
         return self.rfile.read(length) if length else b""
+
+    def _wants_websocket(self, path=None):
+        path = path or self._route()
+        upgrade = (self.headers.get("Upgrade") or "").lower()
+        if "websocket" in upgrade:
+            return True
+        return self.command == "GET" and path.rstrip("/") == "/v1/responses"
 
     def _websocket_tunnel(self):
         upstream = socket.create_connection(
