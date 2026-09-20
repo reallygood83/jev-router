@@ -1,0 +1,278 @@
+import json
+import os
+from collections import deque
+from datetime import datetime, timezone
+from http.client import HTTPConnection
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
+
+from jev_router.jev import JevUnavailable
+
+from .classify import classify_task
+from .decide import decide
+from .extract import extract_task, thread_key
+from .pack import load_pack, save_pack
+
+
+HOP_BY_HOP = {
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailers",
+    "transfer-encoding",
+    "upgrade",
+    "proxy-connection",
+}
+PATCH_PATHS = {"/v1/chat/completions", "/v1/responses"}
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+class GateState:
+    def __init__(self, upstream="http://127.0.0.1:10100", pack_path=None):
+        parsed = urlparse(upstream)
+        self.upstream_host = parsed.hostname or "127.0.0.1"
+        self.upstream_port = parsed.port or 80
+        self.pack_path = pack_path
+        self.pack = load_pack(pack_path)
+        self.sticky = {}
+        self.events = deque(maxlen=20)
+        self.catalog = set()
+
+    def reload_pack(self):
+        self.pack = load_pack(self.pack_path)
+        return self.pack
+
+    def record(self, decision):
+        item = {
+            "at": datetime.now(timezone.utc).strftime("%H:%M:%S"),
+            "status": decision.get("status"),
+            "role": decision.get("role"),
+            "confidence": round(float(decision.get("confidence") or 0), 2),
+            "model_in": decision.get("model_in"),
+            "model_out": decision.get("model_out"),
+        }
+        self.events.appendleft(item)
+        return item
+
+
+def _filter_headers(headers):
+    out = {}
+    for key, value in headers.items():
+        name = str(key)
+        if name.lower() in HOP_BY_HOP or name.lower() == "host":
+            continue
+        out[name] = value
+    return out
+
+
+class GateHandler(BaseHTTPRequestHandler):
+    state: GateState
+    timeout = 120
+
+    def log_message(self, fmt, *args):
+        print("[jev-gate] " + (fmt % args))
+
+    def _cors(self):
+        origin = self.headers.get("Origin") or "http://127.0.0.1:10101"
+        if origin.startswith("http://127.0.0.1") or origin.startswith("http://localhost"):
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Access-Control-Allow-Headers", self.headers.get("Access-Control-Request-Headers") or "*")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+            self.send_header("Access-Control-Expose-Headers", "X-Jev-Gate, X-Jev-Role, X-Jev-Confidence, X-Jev-Model-In, X-Jev-Model-Out")
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self._cors()
+        self.end_headers()
+
+    def do_GET(self):
+        if self.path in {"/", "/index.html"}:
+            return self._serve_index()
+        if self.path == "/api/pack":
+            return self._json(200, self.state.reload_pack())
+        if self.path == "/api/events":
+            return self._json(200, {"events": list(self.state.events)})
+        if self.path == "/api/status":
+            return self._json(200, self._status())
+        return self._proxy()
+
+    def do_PUT(self):
+        if self.path == "/api/pack":
+            length = int(self.headers.get("Content-Length") or 0)
+            raw = self.rfile.read(length) if length else b"{}"
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except ValueError:
+                return self._json(400, {"error": "invalid json"})
+            pack = save_pack(payload, self.state.pack_path)
+            self.state.pack = pack
+            return self._json(200, pack)
+        return self._proxy()
+
+    def do_POST(self):
+        path = self.path.split("?", 1)[0]
+        if path in PATCH_PATHS:
+            return self._proxy(patch=True)
+        return self._proxy()
+
+    def do_PATCH(self):
+        return self._proxy()
+
+    def do_DELETE(self):
+        return self._proxy()
+
+    def _serve_index(self):
+        html = (STATIC_DIR / "index.html").read_bytes()
+        self.send_response(200)
+        self._cors()
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(html)))
+        self.end_headers()
+        self.wfile.write(html)
+
+    def _json(self, code, payload):
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(code)
+        self._cors()
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _status(self):
+        info = {"opencodex_ok": False, "opencodex_version": "", "jev_key_set": bool(os.environ.get("TYPESAFE_API_KEY", "").strip())}
+        try:
+            with urlopen(Request(f"http://{self.state.upstream_host}:{self.state.upstream_port}/healthz"), timeout=2) as res:
+                payload = json.loads(res.read().decode("utf-8"))
+            info["opencodex_ok"] = True
+            info["opencodex_version"] = str(payload.get("version") or "")
+        except Exception:
+            pass
+        return info
+
+    def _refresh_catalog(self):
+        try:
+            with urlopen(Request(f"http://{self.state.upstream_host}:{self.state.upstream_port}/v1/models"), timeout=3) as res:
+                payload = json.loads(res.read().decode("utf-8"))
+            self.state.catalog = {item.get("id") for item in payload.get("data") or [] if isinstance(item, dict) and item.get("id")}
+        except Exception:
+            pass
+
+    def _classify_and_patch(self, raw):
+        pack = self.state.reload_pack()
+        try:
+            body = json.loads(raw.decode("utf-8")) if raw else {}
+        except ValueError:
+            return raw, {"status": "pass", "role": "-", "confidence": 0, "model_in": "", "model_out": "", "reason": "non-json body"}
+        if not isinstance(body, dict):
+            return raw, {"status": "pass", "role": "-", "confidence": 0, "model_in": "", "model_out": "", "reason": "non-object body"}
+        incoming = str(body.get("model") or "")
+        key = thread_key(self.headers)
+        sticky = self.state.sticky.get(key, "") if key else ""
+        task = extract_task(body)
+        max_chars = int(pack.get("max_task_chars") or 2000)
+        task = task[:max_chars]
+        error = ""
+        classification = None
+        if pack.get("enabled") is True and incoming == pack.get("home_model") and not sticky and task:
+            try:
+                classification = classify_task(task, pack, timeout=3)
+            except (JevUnavailable, ValueError) as exc:
+                error = str(exc)
+        decision = decide(pack, incoming, classification, sticky_model=sticky, error=error)
+        if decision["status"] == "rewrite":
+            if not self.state.catalog:
+                self._refresh_catalog()
+            if self.state.catalog and decision["model_out"] not in self.state.catalog:
+                decision = decide(pack, incoming, None, error="rewrite target not in catalog")
+                decision["status"] = "pass"
+                decision["model_out"] = incoming
+                decision["reason"] = "rewrite target not in catalog"
+            else:
+                body["model"] = decision["model_out"]
+                raw = json.dumps(body, ensure_ascii=False).encode("utf-8")
+                if key:
+                    self.state.sticky[key] = decision["model_out"]
+        elif decision["status"] == "sticky" and key:
+            body["model"] = decision["model_out"]
+            raw = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        self.state.record(decision)
+        self._last_decision = decision
+        return raw, decision
+
+    def _proxy(self, patch=False):
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length) if length else b""
+        decision = {"status": "pass", "role": "-", "confidence": 0, "model_in": "", "model_out": ""}
+        if patch:
+            raw, decision = self._classify_and_patch(raw)
+        headers = _filter_headers(self.headers)
+        if raw:
+            headers["Content-Length"] = str(len(raw))
+        conn = HTTPConnection(self.state.upstream_host, self.state.upstream_port, timeout=self.timeout)
+        try:
+            conn.request(self.command, self.path, body=raw or None, headers=headers)
+            upstream = conn.getresponse()
+            self.send_response(upstream.status, upstream.reason)
+            self._cors()
+            for key, value in upstream.getheaders():
+                if key.lower() in HOP_BY_HOP:
+                    continue
+                if key.lower() == "content-length":
+                    continue
+                self.send_header(key, value)
+            self.send_header("X-Jev-Gate", decision.get("status") or "pass")
+            self.send_header("X-Jev-Role", str(decision.get("role") or "-"))
+            self.send_header("X-Jev-Confidence", f"{float(decision.get('confidence') or 0):.2f}")
+            self.send_header("X-Jev-Model-In", str(decision.get("model_in") or ""))
+            self.send_header("X-Jev-Model-Out", str(decision.get("model_out") or ""))
+            up_len = upstream.getheader("Content-Length")
+            if up_len:
+                self.send_header("Content-Length", up_len)
+                self.end_headers()
+                remaining = int(up_len)
+                while remaining > 0:
+                    chunk = upstream.read(min(8192, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+                self.wfile.flush()
+            else:
+                self.send_header("Transfer-Encoding", "chunked")
+                self.end_headers()
+                while True:
+                    chunk = upstream.read(8192)
+                    if not chunk:
+                        break
+                    self.wfile.write(b"%x\r\n" % len(chunk) + chunk + b"\r\n")
+                    self.wfile.flush()
+                self.wfile.write(b"0\r\n\r\n")
+                self.wfile.flush()
+        except Exception as exc:
+            if not self.wfile.closed:
+                try:
+                    self.send_response(502)
+                    self._cors()
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "upstream failed", "detail": str(exc)}).encode("utf-8"))
+                except Exception:
+                    pass
+        finally:
+            conn.close()
+
+
+def make_server(host="127.0.0.1", port=10101, upstream="http://127.0.0.1:10100", pack_path=None):
+    state = GateState(upstream=upstream, pack_path=pack_path)
+
+    class BoundHandler(GateHandler):
+        pass
+
+    BoundHandler.state = state
+    httpd = ThreadingHTTPServer((host, port), BoundHandler)
+    return httpd, state

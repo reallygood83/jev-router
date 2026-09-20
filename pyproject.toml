@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jev-router"
-version = "0.2.0"
+version = "0.3.0"
 description = "Classify a task with TypeSafe Jev, then run a local model selected by your routing table"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -14,6 +14,10 @@ dependencies = []
 
 [project.scripts]
 jev-router = "jev_router.cli:main"
+jev-gate = "jev_gate.cli:main"
+
+[tool.setuptools.package-data]
+jev_gate = ["static/*"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

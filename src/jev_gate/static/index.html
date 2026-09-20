@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jev Gate</title>
+  <style>
+    :root { color-scheme: light; --bg: #f6f4ef; --ink: #1c1916; --line: #d8d0c4; --card: #fff; --ok: #1f7a4d; --bad: #a33; }
+    body { font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--ink); }
+    main { max-width: 860px; margin: 0 auto; padding: 28px 20px 64px; }
+    h1 { font-size: 22px; margin: 0 0 6px; }
+    p.lead { margin: 0 0 22px; color: #5c564d; }
+    section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+    h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em; margin: 0 0 12px; color: #6a635a; }
+    label { display: block; font-size: 13px; margin: 10px 0 4px; }
+    select, input[type="number"] { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    button { border: 0; background: #1c1916; color: #fff; padding: 9px 14px; border-radius: 8px; cursor: pointer; }
+    button.secondary { background: #ece7de; color: var(--ink); }
+    .actions { display: flex; gap: 8px; margin-top: 14px; }
+    .status { font-size: 13px; }
+    .ok { color: var(--ok); }
+    .bad { color: var(--bad); }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); word-break: break-all; }
+    .hint { font-size: 12px; color: #6a635a; margin-top: 8px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Jev Gate</h1>
+  <p class="lead">OpenCodex 앞에서 역할만 고릅니다. Jev는 모델 이름을 보지 않습니다. home일 때만 model을 바꿉니다.</p>
+
+  <section>
+    <h2>연결</h2>
+    <p id="health" class="status">확인 중…</p>
+    <p class="hint">게이트 <code>http://127.0.0.1:10101/v1</code> · 업스트림 OpenCodex <code>:10100</code></p>
+  </section>
+
+  <section>
+    <h2>역할 팩</h2>
+    <label>home (픽커에 두고 다니는 모델)
+      <select id="home"></select>
+    </label>
+    <div class="row">
+      <label>implement
+        <select id="implement"></select>
+      </label>
+      <label>research
+        <select id="research"></select>
+      </label>
+    </div>
+    <label>write
+      <select id="write"></select>
+    </label>
+    <div class="row">
+      <label>confidence floor
+        <input id="floor" type="number" min="0" max="1" step="0.05" value="0.6">
+      </label>
+      <label>enabled
+        <select id="enabled">
+          <option value="true">on</option>
+          <option value="false">off (순수 프록시)</option>
+        </select>
+      </label>
+    </div>
+    <div class="actions">
+      <button type="button" id="reload">모델 새로고침</button>
+      <button type="button" class="secondary" id="save">저장</button>
+    </div>
+    <p id="saveMsg" class="hint"></p>
+  </section>
+
+  <section>
+    <h2>최근 게이트</h2>
+    <table>
+      <thead>
+        <tr><th>시각</th><th>판정</th><th>역할</th><th>in</th><th>out</th><th>conf</th></tr>
+      </thead>
+      <tbody id="events"></tbody>
+    </table>
+    <p class="hint">프롬프트 본문은 저장하지 않습니다.</p>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+function optionList(models, selected, emptyLabel) {
+  const opts = [`<option value="">${emptyLabel}</option>`];
+  for (const m of models) {
+    const id = m.id || m;
+    opts.push(`<option value="${id}" ${id === selected ? "selected" : ""}>${id}</option>`);
+  }
+  return opts.join("");
+}
+async function load() {
+  const [status, models, pack, events] = await Promise.all([
+    fetch("/api/status").then(r => r.json()),
+    fetch("/v1/models").then(r => r.json()).catch(() => ({ data: [] })),
+    fetch("/api/pack").then(r => r.json()),
+    fetch("/api/events").then(r => r.json()),
+  ]);
+  const health = $("health");
+  if (status.opencodex_ok) {
+    health.className = "status ok";
+    health.textContent = "OpenCodex " + (status.opencodex_version || "ok") + " · 모델 " + ((models.data || []).length);
+  } else {
+    health.className = "status bad";
+    health.textContent = "OpenCodex 연결 실패. :10100이 켜져 있는지 보세요.";
+  }
+  const list = models.data || [];
+  $("home").innerHTML = optionList(list, pack.home_model, "(home 선택)");
+  for (const role of ["implement", "research", "write"]) {
+    const current = (pack.roles && pack.roles[role] && pack.roles[role].model) || "";
+    $(role).innerHTML = optionList(list, current, "(비움)");
+  }
+  $("floor").value = pack.confidence_floor ?? 0.6;
+  $("enabled").value = pack.enabled === false ? "false" : "true";
+  $("events").innerHTML = (events.events || []).map(e =>
+    `<tr><td>${e.at || ""}</td><td>${e.status}</td><td>${e.role}</td><td>${e.model_in}</td><td>${e.model_out}</td><td>${e.confidence}</td></tr>`
+  ).join("") || `<tr><td colspan="6">아직 없음</td></tr>`;
+}
+$("reload").onclick = load;
+$("save").onclick = async () => {
+  const pack = {
+    home_model: $("home").value,
+    confidence_floor: Number($("floor").value),
+    enabled: $("enabled").value === "true",
+    roles: {},
+  };
+  const when = {
+    implement: "Write or edit code in the repo.",
+    research: "Look up current facts, prices, or docs.",
+    write: "Draft or edit prose. Korean quality may matter.",
+  };
+  for (const role of ["implement", "research", "write"]) {
+    if ($(role).value) pack.roles[role] = { model: $(role).value, when: when[role] };
+  }
+  const res = await fetch("/api/pack", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(pack) });
+  $("saveMsg").textContent = res.ok ? "저장됨" : "저장 실패";
+  load();
+};
+load();
+setInterval(load, 4000);
+</script>
+</body>
+</html>

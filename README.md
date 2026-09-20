@@ -1,5 +1,11 @@
 # jev-router
 
+OpenCodex 앞에 역할 게이트를 쓰려면 **`jev-gate`** 를 켭니다. GUI에서 home/implement/research/write 모델을 고르고, Codex Base URL을 `http://127.0.0.1:10101/v1` 로 둡니다. 자세한 범위는 `docs/jev-gate-PRD.md`, `docs/jev-gate-SPEC.md`.
+
+```bash
+PYTHONPATH=src python3 -m jev_gate --port 10101 --upstream http://127.0.0.1:10100
+```
+
 `jev-router` classifies a task with [TypeSafe Jev](https://docs.typesafe.ai/concepts/use-case-map.md), then runs a local model that **your routing table** selected.
 
 Jev does not pick `codex:gpt-5.6-sol` or any other model id. It answers three System One questions:
