@@ -11,10 +11,10 @@ from typing import Any, Optional, cast
 from .adapters import execute_plan
 from .benchmark import build_manifest, run_benchmark, save_jsonl, save_manifest
 from .config import load_config, load_weights, models_from_config, put_models, save_config
-from .discovery import discover_local_models
+from .discovery import discover_local_models, recommended_ids, when_hint
 from .evaluation import evaluate_rows, load_jsonl, merge_live_scores, render_report
-from .health import probe_model
-from .jev import JevClient, JevUnavailable, route_task
+from .health import partition_health_targets, probe_models
+from .jev import DEFAULT_THRESHOLD, JevClient, JevUnavailable, route_task
 from .policy import StrategyEstimate, choose_strategy
 from .registry import ModelSpec, eligible_models, validate_registry
 
@@ -169,10 +169,16 @@ def cmd_register(args):
             approved=False,
         )
     wanted = set(filter(None, (args.ids or "").split(",")))
+    if getattr(args, "recommended", False):
+        wanted.update(recommended_ids(by_id.values()))
     if args.approve_all:
         wanted = set(by_id)
     if not wanted:
-        payload = {"status": "needs_selection", "models": sorted(by_id)}
+        payload = {
+            "status": "needs_selection",
+            "models": sorted(by_id),
+            "recommended_ids": recommended_ids(by_id.values()),
+        }
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 2
     unknown = sorted(wanted - set(by_id))
@@ -182,7 +188,7 @@ def cmd_register(args):
     existing = {model.id: model for model in models_from_config(config)}
     for model_id in wanted:
         model = by_id[model_id]
-        existing[model_id] = replace(model, approved=True)
+        existing[model_id] = replace(model, approved=True, when=model.when or when_hint(model))
     put_models(config, validate_registry(existing.values()))
     save_config(args.config, config)
     output = {"status": "registered", "approved_ids": sorted(wanted), "config": str(Path(args.config).expanduser())}
@@ -192,11 +198,32 @@ def cmd_register(args):
 
 def cmd_health(args):
     config = load_config(args.config)
-    models = models_from_config(config)
-    results = {model.id: probe_model(model, timeout_seconds=args.timeout) for model in models if model.enabled}
-    config["health"] = results
+    models = [model for model in models_from_config(config) if model.enabled]
+    require_fingerprint = config.get("evidence_class") != "fixture"
+    fresh, stale = partition_health_targets(
+        models,
+        config.get("health", {}),
+        ttl_seconds=args.health_ttl,
+        require_fingerprint=require_fingerprint,
+        refresh=getattr(args, "refresh", False),
+    )
+    probed = probe_models(stale, timeout_seconds=args.timeout)
+    results = {**fresh, **probed}
+    for model_id in fresh:
+        results[model_id] = dict(fresh[model_id])
+        results[model_id]["skipped"] = True
+    config["health"] = {
+        model_id: {key: value for key, value in record.items() if key != "skipped"}
+        for model_id, record in results.items()
+    }
     save_config(args.config, config)
-    payload = {"status": "completed", "models": results, "config": str(Path(args.config).expanduser())}
+    payload = {
+        "status": "completed",
+        "models": results,
+        "probed": len(probed),
+        "skipped": len(fresh),
+        "config": str(Path(args.config).expanduser()),
+    }
     print(json.dumps(payload, ensure_ascii=False, indent=2) if args.json else _health_text(results))
     return 0 if results and all(result.get("ok") for result in results.values()) else 1
 
@@ -218,6 +245,25 @@ def cmd_route(args, parts):
     health = _health(config)
     require_fingerprint = config.get("evidence_class") != "fixture"
     candidates = eligible_models(models, health, ttl_seconds=args.health_ttl, require_fingerprint=require_fingerprint)
+    if (
+        not candidates
+        and config.get("evidence_class") != "fixture"
+        and not args.dry_run
+    ):
+        approved = [model for model in models if model.approved and model.enabled]
+        if approved:
+            probed = probe_models(approved, timeout_seconds=min(args.timeout, 60))
+            merged = dict(health)
+            merged.update(probed)
+            config["health"] = merged
+            save_config(args.config, config)
+            health = _health(config)
+            candidates = eligible_models(
+                models,
+                health,
+                ttl_seconds=args.health_ttl,
+                require_fingerprint=require_fingerprint,
+            )
     gate = _strategy_gate(config)
     plan: dict[str, Any]
     if not candidates:
@@ -249,7 +295,7 @@ def cmd_route(args, parts):
                 candidates,
                 client,
                 cwd=str(Path.cwd()),
-                threshold=float(jev.get("orchestrator_threshold", 0.6)),
+                threshold=float(jev.get("orchestrator_threshold", DEFAULT_THRESHOLD)),
                 health=health,
                 health_ttl=args.health_ttl,
                 require_fingerprint=require_fingerprint,
@@ -391,6 +437,8 @@ def build_parser():
     parser.add_argument("--evidence-class", default="unverified")
     parser.add_argument("--ids")
     parser.add_argument("--approve-all", action="store_true")
+    parser.add_argument("--recommended", action="store_true")
+    parser.add_argument("--refresh", action="store_true")
     parser.add_argument("--single", action="store_true")
     parser.add_argument("--orch", action="store_true")
     execution = parser.add_mutually_exclusive_group()
@@ -408,10 +456,16 @@ def build_parser():
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
-    command = args.parts[0] if args.parts and args.parts[0] in {"discover", "register", "health", "evaluate", "benchmark"} else "route"
+    command = args.parts[0] if args.parts and args.parts[0] in {"discover", "register", "health", "evaluate", "benchmark", "setup"} else "route"
     parts = args.parts[1:] if command != "route" else args.parts
     if args.discover or command == "discover":
         return cmd_discover(args)
+    if command == "setup":
+        args.recommended = True
+        code = cmd_register(args)
+        if code != 0:
+            return code
+        return cmd_health(args)
     if command == "register":
         return cmd_register(args)
     if args.health or command == "health":

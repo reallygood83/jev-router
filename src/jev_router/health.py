@@ -1,35 +1,44 @@
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .registry import ModelSpec, model_fingerprint, provider_executable
+from .adapters import command_for_prompt
+from .registry import eligible_models, model_fingerprint
 from .runtime import provider_environment
 
 
 _PROMPT = "Reply with exactly: OK"
-
-
-def _model_flag(model):
-    if "--model" in model.argv or "-m" in model.argv:
-        return []
-    return ["--model", model.model]
+_ERROR_MARKERS = {"ERROR", "FAILED", "FAIL"}
 
 
 def command_for_model(model):
-    kind = (model.kind or model.provider).lower()
-    executable = provider_executable(model)
-    if kind == "codex":
-        return [executable, "exec", "--skip-git-repo-check", _PROMPT, *_model_flag(model), *model.argv]
-    if kind == "grok":
-        return [executable, "-p", _PROMPT, "--max-turns", "1", *_model_flag(model), *model.argv]
-    if kind == "claude":
-        return [executable, "--print", "--output-format", "text", _PROMPT, *_model_flag(model), *model.argv]
-    if kind in {"cursor", "agent"}:
-        return [executable, "-p", _PROMPT, *_model_flag(model), *model.argv]
-    if kind == "kimi":
-        return [executable, "-p", _PROMPT, *_model_flag(model), *model.argv]
-    raise ValueError(f"unsupported provider kind: {kind}")
+    extra = []
+    if (model.kind or model.provider).lower() == "grok":
+        extra = ["--max-turns", "1"]
+    return command_for_prompt(model, _PROMPT, extra_flags=extra)
+
+
+def partition_health_targets(models, health, now=None, ttl_seconds=3600, require_fingerprint=True, refresh=False):
+    current = now or datetime.now(timezone.utc)
+    if refresh:
+        return {}, list(models)
+    fresh = {}
+    stale = []
+    for model in models:
+        record = health.get(model.id) if isinstance(health, dict) else None
+        if record and eligible_models(
+            [model],
+            {model.id: record},
+            now=current,
+            ttl_seconds=ttl_seconds,
+            require_fingerprint=require_fingerprint,
+        ):
+            fresh[model.id] = dict(record)
+        else:
+            stale.append(model)
+    return fresh, stale
 
 
 def _run(command, timeout):
@@ -46,7 +55,20 @@ def _run(command, timeout):
     return completed.returncode, completed.stdout, completed.stderr
 
 
-def probe_model(model, runner=None, timeout_seconds=30):
+def _classify_output(stdout):
+    text = str(stdout).strip()
+    if not text:
+        return False, "empty output"
+    lowered = text.lower()
+    if "invalid api key" in lowered or "unauthorized" in lowered or "unauthenticated" in lowered:
+        return False, "probe returned an auth or permission error"
+    first = text.split()[0].strip(".,!:;").upper()
+    if text.upper() in _ERROR_MARKERS or first in _ERROR_MARKERS:
+        return False, "probe did not return OK"
+    return True, "ok"
+
+
+def probe_model(model, runner=None, timeout_seconds=45):
     command = command_for_model(model)
     execute = runner or _run
     started = time.perf_counter()
@@ -88,24 +110,35 @@ def probe_model(model, runner=None, timeout_seconds=30):
             "checked_at": checked_at,
             "latency_ms": latency_ms,
         }
-    if not str(stdout).strip():
+    ok, reason = _classify_output(stdout)
+    if not ok:
         return {
             "ok": False,
-            "reason": "empty output",
-            "checked_at": checked_at,
-            "latency_ms": latency_ms,
-        }
-    if str(stdout).strip() != "OK":
-        return {
-            "ok": False,
-            "reason": "probe did not return exactly OK",
+            "reason": reason,
             "checked_at": checked_at,
             "latency_ms": latency_ms,
         }
     return {
         "ok": True,
-        "reason": "ok",
+        "reason": reason,
         "checked_at": checked_at,
         "latency_ms": latency_ms,
         "model_fingerprint": model_fingerprint(model),
+        "exact_ok": str(stdout).strip() == "OK",
     }
+
+
+def probe_models(models, runner=None, timeout_seconds=45, max_workers=4):
+    targets = list(models)
+    if not targets:
+        return {}
+    workers = max(1, min(max_workers, len(targets)))
+    results = {}
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(probe_model, model, runner, timeout_seconds): model
+            for model in targets
+        }
+        for future, model in futures.items():
+            results[model.id] = future.result()
+    return results

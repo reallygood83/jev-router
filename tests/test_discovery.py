@@ -2,7 +2,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from jev_router.discovery import _claude_specs, parse_codex_catalog, parse_cursor_models, parse_grok_models
+from jev_router.discovery import (
+    _claude_specs,
+    parse_codex_catalog,
+    parse_cursor_models,
+    parse_grok_models,
+    recommended_ids,
+)
 
 
 class DiscoveryTests(unittest.TestCase):
@@ -18,6 +24,21 @@ class DiscoveryTests(unittest.TestCase):
     def test_missing_provider_inventory_is_not_fabricated(self):
         self.assertEqual(parse_grok_models("command failed"), [])
         self.assertEqual(parse_codex_catalog({}), [])
+
+    def test_recommended_ids_prefer_a_small_local_pool(self):
+        models = [
+            {"id": "codex:gpt-5.6-sol"},
+            {"id": "codex:gpt-5.6-terra"},
+            {"id": "codex:gpt-5.4"},
+            {"id": "claude:sonnet"},
+            {"id": "grok:openrouter/inception/mercury-2.5-preview"},
+            {"id": "grok:grok-4.6"},
+            {"id": "kimi:k3"},
+        ]
+        self.assertEqual(
+            recommended_ids(models),
+            ["codex:gpt-5.6-sol", "codex:gpt-5.6-terra", "claude:sonnet", "grok:grok-4.6"],
+        )
 
     def test_claude_aliases_are_not_available_without_executable(self):
         with patch("jev_router.discovery.shutil.which", return_value=None):

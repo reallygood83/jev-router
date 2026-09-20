@@ -8,20 +8,27 @@ The router is opt-in: it does not intercept ordinary prompts. A route is a decis
 
 ```bash
 python3 -m pip install -e .
-jev-router discover --json
+export TYPESAFE_API_KEY=...   # not stored by this project
+jev-router setup --json
 ```
 
-No provider keys are stored by this project. Jev authentication is read from `TYPESAFE_API_KEY`; the provider CLIs keep their own credentials.
+`setup` discovers local CLIs, registers a small recommended pool when those IDs exist (`codex:gpt-5.6-sol`, `codex:gpt-5.6-terra`, `claude:sonnet`, plus one local Grok/Kimi id), and health-checks only those models. No provider keys are stored here. Jev authentication is read from `TYPESAFE_API_KEY`; provider CLIs keep their own credentials and config files. Router secrets (`TYPESAFE_*`, `JEV_*`) are stripped from provider subprocesses; other environment variables are passed through so local proxies such as opencodex keep working.
 
 ## First registration
 
 ```bash
 jev-router discover --json
+jev-router register --config ~/.config/jev-router/config.json --recommended
+# or pick explicitly:
 jev-router register --config ~/.config/jev-router/config.json --ids codex:gpt-5.6-sol,claude:sonnet
 jev-router health --config ~/.config/jev-router/config.json --json
 ```
 
-Discovery is informational. Only `register` with selected IDs sets `approved: true`. A model must be approved, enabled, healthy, and recently checked before it enters Jev's candidate payload.
+Discovery is informational. Only `register` with selected IDs sets `approved: true`. A model must be approved, enabled, healthy, and recently checked before it enters Jev's candidate payload. Jev sees at most 8 candidates, ranked by quality prior then cost.
+
+`health` probes stale models in parallel. Records still inside `--health-ttl` are reused. Pass `--refresh` to probe again. A live probe is a liveness check: exit 0 and non-empty output pass, including `OK` with extra wrapping; empty output, `ERROR`/`FAILED`, and auth failures do not. `--dry-run` never launches a provider process. `--execute` will auto-probe approved models once if none are currently eligible.
+
+Provider flags are placed before the prompt (`codex exec -m MODEL PROMPT`, `grok --max-turns 1 -m MODEL -p PROMPT`).
 
 ## Route explicitly
 
@@ -32,7 +39,7 @@ jev-router --orch --dry-run --json --config ~/.config/jev-router/config.json "co
 jev-router --execute --config ~/.config/jev-router/config.json --task-file task.txt
 ```
 
-`--dry-run` never launches a provider process. Without an available Jev key, the normal route returns `status: blocked`; `--single` and `--orch` are explicit bypasses. A response fixture may be supplied with `--response-file` for deterministic tests.
+Without an available Jev key, the normal route returns `status: blocked`; `--single` and `--orch` are explicit bypasses. A response fixture may be supplied with `--response-file` for deterministic tests. The default orchestrator threshold is `0.75`, so Jev must be fairly sure before it spends a team.
 
 If `policy.strategy_estimates` is present in the config, the router first applies the conservative lower-confidence-bound gate. It bypasses Jev when a baseline wins by less than the declared margin and calls Jev only when the Jev estimate clears that margin.
 
@@ -106,6 +113,8 @@ The checked-in benchmark contains 24 records: 8 paired holdout tasks across `sin
 
 The source reports are [`artifacts/effectiveness.md`](artifacts/effectiveness.md), [`artifacts/c5-cli.json`](artifacts/c5-cli.json), [`artifacts/c6-live-discovery.json`](artifacts/c6-live-discovery.json), and [`artifacts/c6-live-health.json`](artifacts/c6-live-health.json). The honest conclusion is conditional: this repository proves deterministic routing and evaluation, and the fixture shows a positive result; it does not yet prove that Jev improves real provider output. That requires a live holdout run with signed execution and independent score records.
 
+Live discovery can see large local catalogs. That is not a reason to register them. A usable pool is 3-4 approved models. Fixture effectiveness is evaluator evidence only; `publishable=false` until a signed live holdout exists.
+
 ## Links
 
 [배움의달인 YouTube](https://www.youtube.com/@%EB%B0%B0%EC%9B%80%EC%9D%98%EB%8B%AC%EC%9D%B8-p5v) · [X @reallygood83](https://x.com/reallygood83)
@@ -114,7 +123,7 @@ The source reports are [`artifacts/effectiveness.md`](artifacts/effectiveness.md
 
 `jev-router`는 로컬에서 실제 사용 가능한 AI 모델을 발견하고, 사용자가 승인한 모델 중 health check를 통과한 후보만 Jev에게 전달하는 얇은 라우터입니다. 일반 프롬프트를 가로채지 않고 사용자가 명시적으로 호출했을 때만 동작합니다.
 
-처음에는 `discover`로 목록을 확인한 뒤 `register --ids ...`로 허용할 모델을 직접 승인합니다. 이후 `health`가 인증 만료·실패·빈 응답·모델 설정이 바뀐 모델을 제외하고, Jev가 단독 모델 또는 작은 팀을 선택합니다. 실제 실행은 각 provider CLI나 Herdr 같은 실행기가 담당합니다.
+처음에는 `setup` 또는 `register --recommended`로 작은 풀만 승인하는 편이 효율적입니다. `discover`는 목록 확인용이고, `health`는 TTL 안의 성공 기록을 재사용하며 만료분만 병렬 프로브합니다. 인증 만료·실패·빈 응답·모델 설정이 바뀐 모델은 후보에서 빠집니다. Jev 후보는 최대 8개입니다. 실제 실행은 각 provider CLI가 담당합니다.
 
 효과는 단일 모델, 고정 팀, Jev 선택을 같은 paired holdout 작업으로 비교합니다. 품질·비용·시간·실패·라우팅 오버헤드를 목적함수에 넣고, Jev가 최선의 baseline보다 `delta` 이상 높다는 95% bootstrap 하한을 통과해야 실제 효과라고 판정합니다. 실행 결과의 품질은 서명된 실행 manifest와 별도 output hash 결합 점수 파일에서만 주입되며, fixture 결과만으로는 GitHub publish 조건을 충족하지 않습니다.
 

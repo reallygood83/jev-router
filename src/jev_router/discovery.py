@@ -277,3 +277,70 @@ def discover_local_models(home=None, runner=None):
             for model in unique.values()
         ],
     }
+
+
+PREFERRED_IDS = (
+    "codex:gpt-5.6-sol",
+    "codex:gpt-5.6-terra",
+    "claude:sonnet",
+)
+_WHEN_HINTS = {
+    "gpt-5.6-sol": "Prefer for judgment, Korean, and cheaper tasks",
+    "gpt-5.6-terra": "Prefer for coding and implementation",
+    "sonnet": "Prefer for writing, review, and careful reasoning",
+}
+
+
+def _model_id(model):
+    if isinstance(model, dict):
+        return str(model.get("id", ""))
+    return str(getattr(model, "id", ""))
+
+
+def _model_name(model):
+    if isinstance(model, dict):
+        return str(model.get("model", ""))
+    return str(getattr(model, "model", ""))
+
+
+def when_hint(model):
+    name = _model_name(model)
+    if name in _WHEN_HINTS:
+        return _WHEN_HINTS[name]
+    model_id = _model_id(model)
+    slug = model_id.split(":", 1)[-1]
+    if slug in _WHEN_HINTS:
+        return _WHEN_HINTS[slug]
+    if model_id.startswith("grok:") and "/" not in slug:
+        return "Prefer for fast breadth and search-heavy tasks"
+    if model_id.startswith("kimi:"):
+        return "Prefer for coding assistance"
+    return ""
+
+
+def recommended_ids(models, limit=4):
+    available = []
+    grok = []
+    kimi = []
+    seen = set()
+    for model in models:
+        model_id = _model_id(model)
+        if not model_id or model_id in seen:
+            continue
+        seen.add(model_id)
+        available.append(model_id)
+        slug = model_id.split(":", 1)[-1]
+        if model_id.startswith("grok:") and "/" not in slug:
+            grok.append(model_id)
+        if model_id.startswith("kimi:"):
+            kimi.append(model_id)
+    available_set = set(available)
+    picks = [model_id for model_id in PREFERRED_IDS if model_id in available_set]
+    for group in (grok, kimi):
+        if len(picks) >= limit:
+            break
+        for model_id in group:
+            if model_id not in picks:
+                picks.append(model_id)
+                break
+    return picks[:limit]

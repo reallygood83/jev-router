@@ -1,18 +1,20 @@
 import os
-from pathlib import Path
 
 
-_BASE_ENV = {"HOME", "PATH", "USER", "LOGNAME", "LANG", "LC_ALL", "TERM", "TMPDIR", "PWD"}
-_PROVIDER_ENV = {
-    "codex": {"OPENAI_API_KEY"},
-    "grok": {"XAI_API_KEY"},
-    "claude": {"ANTHROPIC_API_KEY"},
-    "agent": {"CURSOR_API_KEY"},
-    "kimi": {"KIMI_API_KEY", "MOONSHOT_API_KEY"},
+_BLOCKED_NAMES = {
+    "TYPESAFE_API_KEY",
+    "JEV_EVIDENCE_KEY",
+    "JEV_SCORER_KEY",
+    "JEV_SCORER_ID",
 }
+_BLOCKED_PREFIXES = ("TYPESAFE_", "JEV_")
+
+
+def _blocked(name):
+    upper = str(name).upper()
+    return upper in _BLOCKED_NAMES or upper.startswith(_BLOCKED_PREFIXES)
 
 
 def provider_environment(command):
-    executable = Path(str(command[0])).name.lower() if command else ""
-    allowed = _BASE_ENV | _PROVIDER_ENV.get(executable, set())
-    return {name: value for name, value in os.environ.items() if name in allowed}
+    del command
+    return {name: value for name, value in os.environ.items() if not _blocked(name)}

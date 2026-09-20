@@ -41,7 +41,15 @@ class AdapterTests(unittest.TestCase):
 
     def test_prompt_command_keeps_provider_arguments(self):
         model = ModelSpec(id="sol", provider="codex", model="sol", argv=("-m", "sol"))
-        self.assertEqual(command_for_prompt(model, "task")[-2:], ["-m", "sol"])
+        command = command_for_prompt(model, "task")
+        self.assertEqual(command[-1], "task")
+        self.assertEqual(command[-3:-1], ["-m", "sol"])
+
+    def test_grok_prompt_puts_flags_before_prompt(self):
+        model = ModelSpec(id="grok", provider="grok", model="grok-4.6", kind="grok", argv=("-m", "grok-4.6"))
+        command = command_for_prompt(model, "task", extra_flags=("--max-turns", "1"))
+        self.assertEqual(command[-2:], ["-p", "task"])
+        self.assertLess(command.index("--max-turns"), command.index("-p"))
 
     def test_option_like_prompt_is_rejected_before_provider_execution(self):
         model = ModelSpec(id="sol", provider="codex", model="sol")
@@ -62,12 +70,23 @@ class AdapterTests(unittest.TestCase):
     def test_provider_subprocess_does_not_inherit_router_secrets(self):
         import jev_router.adapters as adapters
 
-        with patch.dict("os.environ", {"TYPESAFE_API_KEY": "secret", "JEV_EVIDENCE_KEY": "evidence"}, clear=False):
+        with patch.dict(
+            "os.environ",
+            {
+                "TYPESAFE_API_KEY": "secret",
+                "JEV_EVIDENCE_KEY": "evidence",
+                "OPENAI_BASE_URL": "http://127.0.0.1:10100/v1",
+                "OPENAI_API_KEY": "proxy",
+            },
+            clear=False,
+        ):
             with patch.object(adapters.subprocess, "run", return_value=type("Result", (), {})()) as run:
-                adapters._run(["provider"], 1)
+                adapters._run(["codex"], 1)
         environment = run.call_args.kwargs["env"]
         self.assertNotIn("TYPESAFE_API_KEY", environment)
         self.assertNotIn("JEV_EVIDENCE_KEY", environment)
+        self.assertEqual(environment.get("OPENAI_BASE_URL"), "http://127.0.0.1:10100/v1")
+        self.assertEqual(environment.get("OPENAI_API_KEY"), "proxy")
 
 
 if __name__ == "__main__":

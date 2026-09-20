@@ -116,10 +116,21 @@ def provider_executable(model: ModelSpec) -> str:
     return shutil.which(executable) or executable
 
 
+_HASH_CACHE: dict[tuple[str, int, int], str] = {}
+
+
 def _executable_sha256(path: str) -> str:
     target = Path(path)
     if not target.is_file():
         return ""
+    try:
+        stat = target.stat()
+    except OSError:
+        return ""
+    key = (str(target), int(stat.st_mtime_ns), int(stat.st_size))
+    cached = _HASH_CACHE.get(key)
+    if cached is not None:
+        return cached
     digest = hashlib.sha256()
     try:
         with target.open("rb") as stream:
@@ -127,7 +138,20 @@ def _executable_sha256(path: str) -> str:
                 digest.update(chunk)
     except OSError:
         return ""
-    return digest.hexdigest()
+    value = digest.hexdigest()
+    _HASH_CACHE[key] = value
+    return value
+
+
+def rank_models(models: Iterable[ModelSpec], limit: Optional[int] = None) -> list[ModelSpec]:
+    ranked = sorted(
+        models,
+        key=lambda model: (model.quality_prior, -model.input_cost_per_1k, model.id),
+        reverse=True,
+    )
+    if limit is None:
+        return ranked
+    return ranked[:limit]
 
 
 def validate_registry(models: Iterable[ModelSpec]) -> list[ModelSpec]:

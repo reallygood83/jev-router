@@ -10,24 +10,29 @@ from .runtime import provider_environment
 def _model_flag(model):
     if "--model" in model.argv or "-m" in model.argv:
         return []
+    kind = (model.kind or model.provider).lower()
+    if kind in {"codex", "grok"}:
+        return ["-m", model.model]
     return ["--model", model.model]
 
 
-def command_for_prompt(model, prompt):
+def command_for_prompt(model, prompt, extra_flags=None):
     if not isinstance(prompt, str) or prompt.startswith("-"):
         raise ValueError("prompts beginning with '-' are not supported for provider argv execution")
+    extra = [str(flag) for flag in (extra_flags or ())]
     kind = (model.kind or model.provider).lower()
     executable = provider_executable(model)
+    flags = [*extra, *_model_flag(model), *model.argv]
     if kind == "codex":
-        return [executable, "exec", "--skip-git-repo-check", prompt, *_model_flag(model), *model.argv]
+        return [executable, "exec", "--skip-git-repo-check", *flags, prompt]
     if kind == "grok":
-        return [executable, "-p", prompt, *_model_flag(model), *model.argv]
+        return [executable, *flags, "-p", prompt]
     if kind == "claude":
-        return [executable, "--print", "--output-format", "text", prompt, *_model_flag(model), *model.argv]
+        return [executable, "--print", "--output-format", "text", *flags, prompt]
     if kind in {"cursor", "agent"}:
-        return [executable, "-p", prompt, *_model_flag(model), *model.argv]
+        return [executable, *flags, "-p", prompt]
     if kind == "kimi":
-        return [executable, "-p", prompt, *_model_flag(model), *model.argv]
+        return [executable, *flags, "-p", prompt]
     raise ValueError(f"unsupported provider kind: {kind}")
 
 

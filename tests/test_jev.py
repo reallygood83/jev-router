@@ -21,6 +21,25 @@ class JevTests(unittest.TestCase):
             for model in self.models
         }
 
+    def test_payload_caps_large_candidate_sets(self):
+        models = [
+            ModelSpec(id=f"m{i:02d}", provider="codex", model=f"m{i}", approved=True, quality_prior=i / 20)
+            for i in range(10)
+        ]
+        health = {
+            model.id: {
+                "ok": True,
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+                "model_fingerprint": model_fingerprint(model),
+            }
+            for model in models
+        }
+        payload = build_payload("write tests", models, health=health)
+        state = cast(dict[str, Any], payload["state"])
+        candidates = cast(list[dict[str, Any]], state["candidates"])
+        self.assertEqual(len(candidates), 8)
+        self.assertEqual(candidates[0]["id"], "m09")
+
     def test_payload_is_limited_to_approved_healthy_candidates(self):
         unapproved = ModelSpec(id="unapproved", provider="grok", model="grok", approved=False)
         payload = build_payload("write tests", self.models + [unapproved], health=self.health)

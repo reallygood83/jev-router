@@ -4,7 +4,7 @@
   "jev": {
     "endpoint": "https://api.typesafe.ai/v1/systemone",
     "model": "jev-latest",
-    "orchestrator_threshold": 0.6
+    "orchestrator_threshold": 0.75
   },
   "policy": {
     "lambda": 0.01,

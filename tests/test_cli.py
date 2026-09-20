@@ -4,17 +4,88 @@ import json
 import os
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
 from jev_router.cli import _health, _static_plan, main
 from jev_router.evaluation import merge_live_scores
 from jev_router.evidence import sign_record
-from jev_router.registry import eligible_models
-from jev_router.registry import ModelSpec
+from jev_router.registry import ModelSpec, eligible_models, model_fingerprint, model_to_dict
 
 
 class CliTests(unittest.TestCase):
+    def test_register_recommended_selects_a_small_pool(self):
+        discovered = {
+            "providers": {},
+            "models": [
+                {
+                    "id": "codex:gpt-5.6-sol",
+                    "provider": "codex",
+                    "model": "gpt-5.6-sol",
+                    "kind": "codex",
+                    "argv": ["-m", "gpt-5.6-sol"],
+                },
+                {
+                    "id": "claude:sonnet",
+                    "provider": "claude",
+                    "model": "sonnet",
+                    "kind": "claude",
+                    "argv": ["--model", "sonnet"],
+                },
+                {
+                    "id": "grok:openrouter/x",
+                    "provider": "grok",
+                    "model": "openrouter/x",
+                    "kind": "grok",
+                    "argv": ["-m", "openrouter/x"],
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "config.json"
+            output = io.StringIO()
+            with patch("jev_router.cli.discover_local_models", return_value=discovered), contextlib.redirect_stdout(output):
+                code = main(["register", "--recommended", "--config", str(config_path)])
+            payload = json.loads(output.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["approved_ids"], ["claude:sonnet", "codex:gpt-5.6-sol"])
+
+    def test_health_skips_fresh_records(self):
+        model = ModelSpec(id="codex:sol", provider="codex", model="sol", approved=True)
+        record = {
+            "ok": True,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "model_fingerprint": model_fingerprint(model),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "config.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "registry": [model_to_dict(model)],
+                        "health": {model.id: record},
+                        "jev": {},
+                        "policy": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            called = []
+
+            def fake_probe(models, **kwargs):
+                called.extend(models)
+                return {}
+
+            output = io.StringIO()
+            with patch("jev_router.cli.probe_models", side_effect=fake_probe), contextlib.redirect_stdout(output):
+                code = main(["health", "--json", "--config", str(config_path)])
+            payload = json.loads(output.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(called, [])
+        self.assertEqual(payload["skipped"], 1)
+        self.assertEqual(payload["probed"], 0)
+
     def test_dry_run_and_execute_are_mutually_exclusive(self):
         with self.assertRaises(SystemExit) as raised:
             main(["--dry-run", "--execute", "format this note"])
