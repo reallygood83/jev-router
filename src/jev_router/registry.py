@@ -58,7 +58,7 @@ def eligible_models(
         if not model.approved or not model.enabled:
             continue
         result = health.get(model.id)
-        if not result or not result.get("ok"):
+        if not result or result.get("ok") is not True:
             continue
         checked_at = result.get("checked_at")
         if checked_at is None:

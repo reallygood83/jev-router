@@ -90,4 +90,11 @@ def probe_model(model, runner=None, timeout_seconds=30):
             "checked_at": checked_at,
             "latency_ms": latency_ms,
         }
+    if str(stdout).strip() != "OK":
+        return {
+            "ok": False,
+            "reason": "probe did not return exactly OK",
+            "checked_at": checked_at,
+            "latency_ms": latency_ms,
+        }
     return {"ok": True, "reason": "ok", "checked_at": checked_at, "latency_ms": latency_ms}

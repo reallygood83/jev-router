@@ -1,4 +1,5 @@
 import unittest
+from typing import Any, cast
 
 from jev_router.jev import JevClient, build_payload, parse_decision, route_task
 from jev_router.registry import ModelSpec
@@ -14,8 +15,11 @@ class JevTests(unittest.TestCase):
         ]
 
     def test_payload_is_limited_to_approved_healthy_candidates(self):
-        payload = build_payload("write tests", self.models)
-        self.assertEqual([item["id"] for item in payload["state"]["candidates"]], ["cheap", "strong"])
+        unapproved = ModelSpec(id="unapproved", provider="grok", model="grok", approved=False)
+        payload = build_payload("write tests", self.models + [unapproved])
+        state = cast(dict[str, Any], payload["state"])
+        candidates = cast(list[dict[str, Any]], state["candidates"])
+        self.assertEqual([item["id"] for item in candidates], ["cheap", "strong"])
 
     def test_jev_decision_selects_captain_and_workers(self):
         response = {"mode": "orchestration", "captain_id": "strong", "worker_ids": ["cheap", "strong"]}
@@ -31,6 +35,10 @@ class JevTests(unittest.TestCase):
     def test_jev_cannot_select_outside_candidate_set(self):
         with self.assertRaises(ValueError):
             parse_decision({"mode": "single", "model_id": "not-approved"}, self.models)
+
+    def test_jev_orchestration_requires_two_models(self):
+        with self.assertRaises(ValueError):
+            parse_decision({"mode": "orchestration", "captain_id": "cheap", "worker_ids": ["cheap"]}, self.models)
 
     def test_custom_type_safe_endpoint_is_rejected(self):
         with self.assertRaises(ValueError):

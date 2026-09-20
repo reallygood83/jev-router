@@ -1,20 +1,31 @@
 test_execute_plan_uses_captain_after_parallel_workers (test_adapters.AdapterTests) ... ok
 test_prompt_command_keeps_provider_arguments (test_adapters.AdapterTests) ... ok
+test_execution_never_imports_task_quality_as_live_evidence (test_benchmark.BenchmarkTests) ... ok
 test_dry_run_returns_only_approved_healthy_candidates (test_cli.CliTests) ... ok
+test_explicit_static_team_keeps_all_configured_models (test_cli.CliTests) ... ok
+test_fake_now_health_is_not_fresh_without_fixture_label (test_cli.CliTests) ... ok
 test_fixture_cannot_be_labeled_live (test_cli.CliTests) ... ok
+test_live_evidence_requires_external_hash_bound_scores (test_cli.CliTests) ... ok
+test_malformed_evaluation_input_returns_json_error (test_cli.CliTests) ... ok
+test_orchestration_with_one_model_is_blocked (test_cli.CliTests) ... ok
 test_policy_baseline_fails_closed_for_empty_or_missing_models (test_cli.CliTests) ... ok
+test_claude_aliases_are_not_available_without_executable (test_discovery.DiscoveryTests) ... ok
 test_missing_provider_inventory_is_not_fabricated (test_discovery.DiscoveryTests) ... ok
 test_provider_parsers_keep_real_models_and_ignore_headers (test_discovery.DiscoveryTests) ... ok
 test_invalid_weights_and_bootstrap_count_are_rejected (test_evaluation.EvaluationTests) ... ok
 test_missing_static_team_is_insufficient_evidence (test_evaluation.EvaluationTests) ... ok
 test_paired_report_is_deterministic_and_correct (test_evaluation.EvaluationTests) ... ok
+test_live_score_is_bound_to_executed_output_hash (test_evaluation.EvaluationTests) ... ok
 test_failed_or_stale_models_are_excluded (test_health.HealthTests) ... ok
 test_missing_or_future_health_timestamp_is_excluded (test_health.HealthTests) ... ok
+test_non_boolean_health_success_is_excluded (test_health.HealthTests) ... ok
 test_command_mapping_keeps_model_arguments (test_health_probe.HealthProbeTests) ... ok
 test_empty_probe_output_is_not_healthy (test_health_probe.HealthProbeTests) ... ok
+test_non_ok_probe_output_is_not_healthy (test_health_probe.HealthProbeTests) ... ok
 test_jev_cannot_select_outside_candidate_set (test_jev.JevTests) ... ok
 test_custom_type_safe_endpoint_is_rejected (test_jev.JevTests) ... ok
 test_jev_decision_selects_captain_and_workers (test_jev.JevTests) ... ok
+test_jev_orchestration_requires_two_models (test_jev.JevTests) ... ok
 test_payload_is_limited_to_approved_healthy_candidates (test_jev.JevTests) ... ok
 test_non_finite_confidence_is_rejected (test_policy.PolicyTests) ... ok
 test_orchestration_is_selected_when_lower_bound_beats_baseline (test_policy.PolicyTests) ... ok
@@ -26,6 +37,6 @@ test_unapproved_models_are_excluded (test_registry.RegistryTests) ... ok
 test_registry_round_trip_preserves_approval_and_metadata (test_registry_storage.RegistryStorageTests) ... ok
 
 ----------------------------------------------------------------------
-Ran 26 tests in 0.006s
+Ran 37 tests in 0.006s
 
 OK

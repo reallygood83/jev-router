@@ -193,6 +193,8 @@ def _cursor_specs(runner=None):
 
 
 def _claude_specs(home):
+    if shutil.which("claude") is None:
+        return [], "unavailable", "executable unavailable"
     aliases = ["fable", "opus", "sonnet"]
     names = list(aliases)
     settings = home / ".claude" / "settings.json"

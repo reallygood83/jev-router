@@ -1,6 +1,8 @@
+import hashlib
 import unittest
+from typing import cast
 
-from jev_router.evaluation import evaluate_rows
+from jev_router.evaluation import evaluate_rows, merge_live_scores
 
 
 class EvaluationTests(unittest.TestCase):
@@ -19,8 +21,8 @@ class EvaluationTests(unittest.TestCase):
 
         self.assertEqual(first, second)
         self.assertEqual(first["verdict"], "effective")
-        self.assertGreater(first["delta_mean"], 0)
-        self.assertGreater(first["delta_lcb95"], 0)
+        self.assertGreater(cast(float, first["delta_mean"]), 0)
+        self.assertGreater(cast(float, first["delta_lcb95"]), 0)
 
     def test_invalid_weights_and_bootstrap_count_are_rejected(self):
         with self.assertRaises(ValueError):
@@ -39,6 +41,31 @@ class EvaluationTests(unittest.TestCase):
         )
         self.assertEqual(result["verdict"], "insufficient_evidence")
         self.assertEqual(result["incomplete_tasks"], ["a"])
+
+    def test_live_score_is_bound_to_executed_output_hash(self):
+        output_sha256 = hashlib.sha256(b"answer").hexdigest()
+        rows = [{
+            "task_id": "a",
+            "arm": "single",
+            "evidence_class": "runtime_unscored",
+            "executed": True,
+            "output_sha256": output_sha256,
+        }]
+        scores = [{
+            "task_id": "a",
+            "arm": "single",
+            "output_sha256": output_sha256,
+            "quality": 0.8,
+            "source": "human",
+            "scorer_id": "reviewer-01",
+        }]
+
+        merged = merge_live_scores(rows, scores)
+
+        self.assertEqual(merged[0]["quality"], 0.8)
+        self.assertEqual(merged[0]["evidence_class"], "live")
+        with self.assertRaises(ValueError):
+            merge_live_scores(rows, [dict(scores[0], output_sha256="0" * 64)])
 
 
 if __name__ == "__main__":

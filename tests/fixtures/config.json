@@ -1,4 +1,5 @@
 {
+  "evidence_class": "fixture",
   "registry": [
     {
       "id": "fixture-cheap",

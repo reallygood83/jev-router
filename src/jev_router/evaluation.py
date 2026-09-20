@@ -1,9 +1,14 @@
 import random
 import math
 import json
+import re
 from collections import defaultdict
 from statistics import mean
 from pathlib import Path
+
+
+_SCORE_SOURCES = {"human", "judge"}
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _as_float(value, name):
@@ -135,6 +140,56 @@ def load_jsonl(path):
             raise ValueError(f"JSONL row {line_number} must be an object")
         rows.append(row)
     return rows
+
+
+def merge_live_scores(rows, scores):
+    benchmark_rows = list(rows)
+    expected = {}
+    for row in benchmark_rows:
+        key = (row.get("task_id"), row.get("arm"))
+        output_sha256 = row.get("output_sha256")
+        if row.get("evidence_class") != "runtime_unscored" or row.get("executed") is not True:
+            raise ValueError("live evidence requires benchmark rows produced by execution")
+        if not isinstance(output_sha256, str) or not _SHA256.fullmatch(output_sha256):
+            raise ValueError("live evidence requires a valid output_sha256 for every row")
+        if key in expected:
+            raise ValueError(f"duplicate benchmark row for task {key[0]} arm {key[1]}")
+        expected[key] = row
+
+    scored = {}
+    for score in scores:
+        if not isinstance(score, dict):
+            raise ValueError("each live score must be an object")
+        key = (score.get("task_id"), score.get("arm"))
+        if key not in expected:
+            raise ValueError(f"score does not match a benchmark row: {key[0]} / {key[1]}")
+        if key in scored:
+            raise ValueError(f"duplicate live score for task {key[0]} arm {key[1]}")
+        if score.get("output_sha256") != expected[key].get("output_sha256"):
+            raise ValueError(f"score hash does not match output for task {key[0]} arm {key[1]}")
+        source = score.get("source")
+        if source not in _SCORE_SOURCES:
+            raise ValueError("live score source must be human or judge")
+        scorer_id = score.get("scorer_id")
+        if not isinstance(scorer_id, str) or not scorer_id.strip():
+            raise ValueError("live scores require scorer_id")
+        quality = _as_float(score.get("quality"), "quality")
+        if not 0 <= quality <= 1:
+            raise ValueError("quality must be between 0 and 1")
+        scored[key] = (quality, source)
+
+    missing = sorted(set(expected) - set(scored))
+    if missing:
+        raise ValueError("live scores are missing benchmark rows")
+    merged = []
+    for row in benchmark_rows:
+        quality, source = scored[(row["task_id"], row["arm"])]
+        item = dict(row)
+        item["quality"] = quality
+        item["evidence_class"] = "live"
+        item["quality_source"] = source
+        merged.append(item)
+    return merged
 
 
 def render_report(result, weights, evidence_class="unverified"):

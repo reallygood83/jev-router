@@ -18,7 +18,14 @@ class HealthProbeTests(unittest.TestCase):
         result = probe_model(model, runner=lambda *args, **kwargs: (0, "", ""))
 
         self.assertFalse(result["ok"])
-        self.assertIn("empty", result["reason"])
+        self.assertIn("empty", str(result["reason"]))
+
+    def test_non_ok_probe_output_is_not_healthy(self):
+        model = ModelSpec(id="error", provider="grok", model="grok-4.6", kind="grok")
+
+        result = probe_model(model, runner=lambda *args, **kwargs: (0, "ERROR", ""))
+
+        self.assertFalse(result["ok"])
 
 
 if __name__ == "__main__":

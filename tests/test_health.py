@@ -39,6 +39,18 @@ class HealthTests(unittest.TestCase):
         self.assertEqual(missing, [])
         self.assertEqual(future, [])
 
+    def test_non_boolean_health_success_is_excluded(self):
+        now = datetime.now(timezone.utc)
+        model = ModelSpec(id="model", provider="codex", model="sol", approved=True)
+
+        eligible = eligible_models(
+            [model],
+            {"model": {"ok": "true", "checked_at": now.isoformat()}},
+            now=now,
+        )
+
+        self.assertEqual(eligible, [])
+
 
 if __name__ == "__main__":
     unittest.main()

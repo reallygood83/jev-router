@@ -42,7 +42,12 @@ def _candidate_dict(model):
     }
 
 
+def _approved_candidates(candidates):
+    return [model for model in candidates if model.approved and model.enabled]
+
+
 def build_payload(task, candidates, cwd=""):
+    candidates = _approved_candidates(candidates)
     rows = [_candidate_dict(model) for model in candidates]
     criteria = {model.id: model.when or model.purpose or model.model for model in candidates}
     return {
@@ -130,6 +135,7 @@ def parse_decision(response, candidates, threshold=0.6):
         raise ValueError("Jev response must be an object")
     if not math.isfinite(float(threshold)) or not 0 <= float(threshold) <= 1:
         raise ValueError("orchestrator threshold must be between 0 and 1")
+    candidates = _approved_candidates(candidates)
     allowed = {model.id: model for model in candidates}
     candidate_body = response.get("decision", response)
     body = candidate_body if isinstance(candidate_body, dict) else response
@@ -162,6 +168,8 @@ def parse_decision(response, candidates, threshold=0.6):
     selected = [model_id for model_id in workers if model_id in allowed]
     if not selected or worker not in allowed or captain not in allowed:
         raise ValueError("Jev selected a model outside the approved healthy candidate set")
+    if mode == "orchestration" and len(selected) < 2:
+        raise ValueError("Jev orchestration requires at least two approved models")
     confidence = float(body.get("confidence", 0.0) or 0.0)
     if not math.isfinite(confidence) or not 0 <= confidence <= 1:
         raise ValueError("Jev confidence must be between 0 and 1")
@@ -176,6 +184,7 @@ def parse_decision(response, candidates, threshold=0.6):
 
 
 def route_task(task, candidates, client, cwd="", threshold=0.6):
+    candidates = _approved_candidates(candidates)
     if not candidates:
         return {"status": "blocked", "reason": "no approved healthy models"}
     payload = build_payload(task, candidates, cwd)

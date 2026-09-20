@@ -11,7 +11,7 @@ from .adapters import execute_plan
 from .benchmark import run_benchmark, save_jsonl
 from .config import load_config, load_weights, models_from_config, put_models, save_config
 from .discovery import discover_local_models
-from .evaluation import evaluate_rows, load_jsonl, render_report
+from .evaluation import evaluate_rows, load_jsonl, merge_live_scores, render_report
 from .health import probe_model
 from .jev import JevClient, JevUnavailable, route_task
 from .policy import StrategyEstimate, choose_strategy
@@ -41,9 +41,10 @@ def _health(config):
     result = config.get("health", {})
     normalized = {}
     now = datetime.now(timezone.utc).isoformat()
+    fixture = config.get("evidence_class") == "fixture"
     for model_id, value in result.items():
         item = dict(value)
-        if item.get("checked_at") == "now":
+        if fixture and item.get("checked_at") == "now":
             item["checked_at"] = now
         normalized[model_id] = item
     return normalized
@@ -72,6 +73,8 @@ def _static_plan(models, mode, model_ids=None) -> dict[str, Any]:
         ordered = sorted(models, key=lambda model: (model.quality_prior, -model.input_cost_per_1k), reverse=True)
     if not ordered:
         return {"status": "blocked", "reason": "no approved healthy models"}
+    if mode == "orchestration" and len(ordered) < 2:
+        return {"status": "blocked", "reason": "orchestration requires at least two models"}
     captain = ordered[0]
     if mode == "single":
         return {
@@ -84,7 +87,7 @@ def _static_plan(models, mode, model_ids=None) -> dict[str, Any]:
             "reason": "explicit single mode",
             "source": "explicit",
         }
-    workers = [model.id for model in ordered[: min(3, len(ordered))]]
+    workers = [model.id for model in ordered] if model_ids is not None else [model.id for model in ordered[:3]]
     return {
         "status": "ok",
         "mode": "orchestration",
@@ -228,12 +231,12 @@ def cmd_route(args, parts):
     else:
         jev = config.get("jev", {})
         response_file = _optional_path(args.response_file or jev.get("response_file"), args.config)
-        client = JevClient(
-            endpoint=jev.get("endpoint", "https://api.typesafe.ai/v1/systemone"),
-            model=jev.get("model", "jev-latest"),
-            response_file=response_file,
-        )
         try:
+            client = JevClient(
+                endpoint=jev.get("endpoint", "https://api.typesafe.ai/v1/systemone"),
+                model=jev.get("model", "jev-latest"),
+                response_file=response_file,
+            )
             plan = route_task(task, candidates, client, cwd=str(Path.cwd()), threshold=float(jev.get("orchestrator_threshold", 0.6)))
         except (JevUnavailable, ValueError) as exc:
             plan = {"status": "blocked", "reason": str(exc), "source": "jev"}
@@ -251,19 +254,17 @@ def cmd_route(args, parts):
 
 
 def cmd_evaluate(args):
-    rows = load_jsonl(args.input)
-    if args.evidence_class == "live":
-        valid = all(
-            row.get("evidence_class") == "live"
-            and row.get("executed") is True
-            and row.get("quality_source") in {"human", "judge"}
-            for row in rows
-        )
-        if not rows or not valid:
-            print(json.dumps({"verdict": "blocked", "reason": "live evidence requires executed rows scored by human or judge"}, ensure_ascii=False))
-            return 2
-    weights = load_weights(args.weights)
-    result = evaluate_rows(rows, weights, seed=args.seed, bootstrap_samples=args.bootstrap_samples)
+    try:
+        rows = load_jsonl(args.input)
+        if args.evidence_class == "live":
+            if not args.scores:
+                raise ValueError("live evidence requires --scores with external output-bound scores")
+            rows = merge_live_scores(rows, load_jsonl(args.scores))
+        weights = load_weights(args.weights)
+        result = evaluate_rows(rows, weights, seed=args.seed, bootstrap_samples=args.bootstrap_samples)
+    except (OSError, ValueError) as exc:
+        print(json.dumps({"verdict": "blocked", "reason": str(exc)}, ensure_ascii=False))
+        return 2
     report = render_report(result, weights, args.evidence_class)
     if args.output:
         Path(args.output).parent.mkdir(parents=True, exist_ok=True)
@@ -284,13 +285,17 @@ def cmd_benchmark(args):
     single_id = args.single_id or candidates[0].id
     team_ids = [item for item in (args.team_ids or "").split(",") if item] or [model.id for model in candidates[:2]]
     jev = config.get("jev", {})
-    client = JevClient(
-        endpoint=jev.get("endpoint", "https://api.typesafe.ai/v1/systemone"),
-        model=jev.get("model", "jev-latest"),
-        response_file=_optional_path(args.response_file or jev.get("response_file"), args.config),
-    )
-    tasks = load_jsonl(args.tasks)
-    rows = run_benchmark(tasks, candidates, single_id, team_ids, client, seed=args.seed, execute=args.execute, quality_source=args.quality_source)
+    try:
+        client = JevClient(
+            endpoint=jev.get("endpoint", "https://api.typesafe.ai/v1/systemone"),
+            model=jev.get("model", "jev-latest"),
+            response_file=_optional_path(args.response_file or jev.get("response_file"), args.config),
+        )
+        tasks = load_jsonl(args.tasks)
+        rows = run_benchmark(tasks, candidates, single_id, team_ids, client, seed=args.seed, execute=args.execute)
+    except (OSError, ValueError, JevUnavailable) as exc:
+        print(json.dumps({"status": "blocked", "reason": str(exc)}, ensure_ascii=False))
+        return 2
     save_jsonl(args.benchmark_output, rows)
     print(json.dumps({"status": "completed", "rows": len(rows), "output": args.benchmark_output, "executed": args.execute}, ensure_ascii=False, indent=2))
     return 0
@@ -309,8 +314,8 @@ def build_parser():
     parser.add_argument("--benchmark-output", default="artifacts/benchmark.jsonl")
     parser.add_argument("--single-id")
     parser.add_argument("--team-ids")
+    parser.add_argument("--scores")
     parser.add_argument("--evidence-class", default="unverified")
-    parser.add_argument("--quality-source", choices=["task", "human", "judge"], default="task")
     parser.add_argument("--ids")
     parser.add_argument("--approve-all", action="store_true")
     parser.add_argument("--single", action="store_true")
