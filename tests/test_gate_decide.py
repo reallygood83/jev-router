@@ -50,6 +50,13 @@ class GateDecideTests(unittest.TestCase):
         self.assertEqual(decision["status"], "pass")
         self.assertEqual(decision["model_out"], "gpt-5.6-sol")
 
+    def test_rewrite_includes_role_effort(self):
+        custom = pack()
+        custom["roles"]["research"]["reasoning_effort"] = "high"
+        decision = decide(custom, "gpt-5.6-sol", {"role": "research", "confidence": 0.82, "needs_korean": 0.1})
+        self.assertEqual(decision["status"], "rewrite")
+        self.assertEqual(decision["reasoning_effort"], "high")
+
     def test_implement_rewrites_home_to_terra(self):
         decision = decide(pack(), "gpt-5.6-sol", {"role": "implement", "confidence": 0.9, "needs_korean": 0.1})
         self.assertEqual(decision["status"], "rewrite")

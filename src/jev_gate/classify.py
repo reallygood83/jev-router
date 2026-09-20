@@ -7,6 +7,7 @@ import urllib.request
 from jev_router.jev import DEFAULT_ENDPOINT, JevUnavailable, _NoRedirect, _answer_value, _validate_endpoint
 
 from .pack import filled_roles
+from .secrets import load_key
 
 
 def build_payload(task, pack):
@@ -60,7 +61,7 @@ def classify_task(task, pack, key="", timeout=3, transport=None):
     if transport is not None:
         response = transport(payload)
         return parse_classification(response, filled_roles(pack))
-    secret = key or os.environ.get("TYPESAFE_API_KEY", "").strip()
+    secret = key or load_key()
     if not secret:
         raise JevUnavailable("TypeSafe API key unavailable")
     _validate_endpoint(DEFAULT_ENDPOINT)

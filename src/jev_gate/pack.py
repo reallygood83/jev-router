@@ -3,18 +3,22 @@ import os
 from pathlib import Path
 
 
+EFFORTS = ("", "low", "medium", "high", "xhigh", "max", "ultra")
 DEFAULT_ROLES = {
     "implement": {
         "when": "Write or edit code in the repo.",
         "model": "gpt-5.6-terra",
+        "reasoning_effort": "high",
     },
     "research": {
         "when": "Look up current facts, prices, or docs.",
         "model": "xai/grok-4.5",
+        "reasoning_effort": "medium",
     },
     "write": {
         "when": "Draft or edit prose. Korean quality may matter.",
         "model": "gpt-5.6-sol",
+        "reasoning_effort": "low",
     },
 }
 
@@ -26,11 +30,17 @@ def default_pack_path():
 def empty_pack():
     return {
         "home_model": "gpt-5.6-sol",
+        "home_reasoning_effort": "",
         "confidence_floor": 0.6,
         "enabled": True,
         "max_task_chars": 2000,
         "roles": {key: dict(value) for key, value in DEFAULT_ROLES.items()},
     }
+
+
+def _effort(value):
+    effort = str(value or "").strip().lower()
+    return effort if effort in EFFORTS else ""
 
 
 def _role_entry(value):
@@ -40,7 +50,7 @@ def _role_entry(value):
     when = str(value.get("when") or "").strip()
     if not model:
         return None
-    return {"model": model, "when": when or model}
+    return {"model": model, "when": when or model, "reasoning_effort": _effort(value.get("reasoning_effort"))}
 
 
 def normalize_pack(raw):
@@ -58,6 +68,7 @@ def normalize_pack(raw):
         floor = 0.6
     pack["confidence_floor"] = min(1.0, max(0.0, floor))
     pack["enabled"] = bool(raw.get("enabled", True))
+    pack["home_reasoning_effort"] = _effort(raw.get("home_reasoning_effort"))
     try:
         pack["max_task_chars"] = max(32, int(raw.get("max_task_chars", 2000)))
     except (TypeError, ValueError):

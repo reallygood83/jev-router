@@ -98,6 +98,10 @@ class GateHandler(BaseHTTPRequestHandler):
             return self._json(200, {"events": list(self.state.events)})
         if self.path == "/api/status":
             return self._json(200, self._status())
+        if self.path == "/api/secrets":
+            return self._json(200, {"jev_key_set": key_is_set()})
+        if self.path == "/api/install":
+            return self._json(200, install_status())
         return self._proxy()
 
     def do_PUT(self):
@@ -115,6 +119,10 @@ class GateHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?", 1)[0]
+        if path == "/api/secrets":
+            return self._save_secrets()
+        if path == "/api/install":
+            return self._install()
         if path in PATCH_PATHS:
             return self._proxy(patch=True)
         return self._proxy()
@@ -144,7 +152,7 @@ class GateHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _status(self):
-        info = {"opencodex_ok": False, "opencodex_version": "", "jev_key_set": bool(os.environ.get("TYPESAFE_API_KEY", "").strip())}
+        info = {"opencodex_ok": False, "opencodex_version": "", "jev_key_set": key_is_set()}
         try:
             with urlopen(Request(f"http://{self.state.upstream_host}:{self.state.upstream_port}/healthz"), timeout=2) as res:
                 payload = json.loads(res.read().decode("utf-8"))
@@ -172,7 +180,11 @@ class GateHandler(BaseHTTPRequestHandler):
             return raw, {"status": "pass", "role": "-", "confidence": 0, "model_in": "", "model_out": "", "reason": "non-object body"}
         incoming = str(body.get("model") or "")
         key = thread_key(self.headers)
-        sticky = self.state.sticky.get(key, "") if key else ""
+        stored = self.state.sticky.get(key) if key else ""
+        if isinstance(stored, dict):
+            sticky, sticky_effort = str(stored.get("model") or ""), str(stored.get("effort") or "")
+        else:
+            sticky, sticky_effort = str(stored or ""), ""
         task = extract_task(body)
         max_chars = int(pack.get("max_task_chars") or 2000)
         task = task[:max_chars]
@@ -183,7 +195,14 @@ class GateHandler(BaseHTTPRequestHandler):
                 classification = classify_task(task, pack, timeout=3)
             except (JevUnavailable, ValueError) as exc:
                 error = str(exc)
-        decision = decide(pack, incoming, classification, sticky_model=sticky, error=error)
+        decision = decide(
+            pack,
+            incoming,
+            classification,
+            sticky_model=sticky,
+            sticky_effort=sticky_effort,
+            error=error,
+        )
         if decision["status"] == "rewrite":
             if not self.state.catalog:
                 self._refresh_catalog()
@@ -193,16 +212,55 @@ class GateHandler(BaseHTTPRequestHandler):
                 decision["model_out"] = incoming
                 decision["reason"] = "rewrite target not in catalog"
             else:
-                body["model"] = decision["model_out"]
-                raw = json.dumps(body, ensure_ascii=False).encode("utf-8")
+                raw = self._apply_decision(body, decision)
                 if key:
-                    self.state.sticky[key] = decision["model_out"]
+                    self.state.sticky[key] = {
+                        "model": decision["model_out"],
+                        "effort": decision.get("reasoning_effort") or "",
+                    }
         elif decision["status"] == "sticky" and key:
-            body["model"] = decision["model_out"]
-            raw = json.dumps(body, ensure_ascii=False).encode("utf-8")
+            raw = self._apply_decision(body, decision)
         self.state.record(decision)
-        self._last_decision = decision
         return raw, decision
+
+    def _apply_decision(self, body, decision):
+        body["model"] = decision["model_out"]
+        effort = str(decision.get("reasoning_effort") or "").strip()
+        if effort:
+            body["reasoning_effort"] = effort
+            if isinstance(body.get("reasoning"), dict):
+                body["reasoning"]["effort"] = effort
+        return json.dumps(body, ensure_ascii=False).encode("utf-8")
+
+    def _save_secrets(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except ValueError:
+            return self._json(400, {"error": "invalid json"})
+        if not isinstance(payload, dict):
+            return self._json(400, {"error": "invalid json"})
+        save_key(payload.get("typesafe_api_key"), clear=bool(payload.get("clear")))
+        return self._json(200, {"jev_key_set": key_is_set()})
+
+    def _install(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except ValueError:
+            payload = {}
+        kind = str((payload or {}).get("kind") or "skill")
+        try:
+            if kind == "mcp":
+                result = install_mcp()
+            else:
+                result = install_skill()
+        except Exception as exc:
+            return self._json(500, {"ok": False, "error": str(exc)})
+        result["status"] = install_status()
+        return self._json(200, result)
 
     def _proxy(self, patch=False):
         length = int(self.headers.get("Content-Length") or 0)

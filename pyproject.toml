@@ -17,7 +17,7 @@ jev-router = "jev_router.cli:main"
 jev-gate = "jev_gate.cli:main"
 
 [tool.setuptools.package-data]
-jev_gate = ["static/*"]
+jev_gate = ["static/*", "static/typesafe-skill/*"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

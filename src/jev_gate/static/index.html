@@ -7,17 +7,18 @@
   <style>
     :root { color-scheme: light; --bg: #f6f4ef; --ink: #1c1916; --line: #d8d0c4; --card: #fff; --ok: #1f7a4d; --bad: #a33; }
     body { font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--ink); }
-    main { max-width: 860px; margin: 0 auto; padding: 28px 20px 64px; }
+    main { max-width: 900px; margin: 0 auto; padding: 28px 20px 64px; }
     h1 { font-size: 22px; margin: 0 0 6px; }
     p.lead { margin: 0 0 22px; color: #5c564d; }
     section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
     h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em; margin: 0 0 12px; color: #6a635a; }
     label { display: block; font-size: 13px; margin: 10px 0 4px; }
-    select, input[type="number"] { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    select, input[type="number"], input[type="password"] { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+    .row { display: grid; grid-template-columns: 1fr 160px; gap: 12px; }
+    .row3 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     button { border: 0; background: #1c1916; color: #fff; padding: 9px 14px; border-radius: 8px; cursor: pointer; }
     button.secondary { background: #ece7de; color: var(--ink); }
-    .actions { display: flex; gap: 8px; margin-top: 14px; }
+    .actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
     .status { font-size: 13px; }
     .ok { color: var(--ok); }
     .bad { color: var(--bad); }
@@ -29,34 +30,43 @@
 <body>
 <main>
   <h1>Jev Gate</h1>
-  <p class="lead">OpenCodex 앞에서 역할만 고릅니다. Jev는 모델 이름을 보지 않습니다. home일 때만 model을 바꿉니다.</p>
-
+  <p class="lead">OpenCodex 앞에서 역할만 고릅니다. Jev는 모델 이름을 보지 않습니다. home일 때만 model과 추론 강도를 바꿉니다.</p>
   <section>
     <h2>연결</h2>
     <p id="health" class="status">확인 중…</p>
+    <p id="keyStatus" class="hint">TypeSafe 키: 확인 중</p>
     <p class="hint">게이트 <code>http://127.0.0.1:10101/v1</code> · 업스트림 OpenCodex <code>:10100</code></p>
   </section>
-
+  <section>
+    <h2>TypeSafe API</h2>
+    <label>TYPESAFE_API_KEY (저장해도 다시 보여주지 않음)
+      <input id="apiKey" type="password" autocomplete="off" placeholder="ts-...">
+    </label>
+    <div class="actions">
+      <button type="button" id="saveKey">키 저장</button>
+      <button type="button" class="secondary" id="clearKey">키 삭제</button>
+    </div>
+    <p id="keyMsg" class="hint"></p>
+  </section>
   <section>
     <h2>역할 팩</h2>
     <label>home (픽커에 두고 다니는 모델)
       <select id="home"></select>
     </label>
     <div class="row">
-      <label>implement
-        <select id="implement"></select>
-      </label>
-      <label>research
-        <select id="research"></select>
-      </label>
+      <label>implement 모델<select id="implement"></select></label>
+      <label>추론<select id="implementEffort"></select></label>
     </div>
-    <label>write
-      <select id="write"></select>
-    </label>
     <div class="row">
-      <label>confidence floor
-        <input id="floor" type="number" min="0" max="1" step="0.05" value="0.6">
-      </label>
+      <label>research 모델<select id="research"></select></label>
+      <label>추론<select id="researchEffort"></select></label>
+    </div>
+    <div class="row">
+      <label>write 모델<select id="write"></select></label>
+      <label>추론<select id="writeEffort"></select></label>
+    </div>
+    <div class="row3">
+      <label>confidence floor<input id="floor" type="number" min="0" max="1" step="0.05" value="0.6"></label>
       <label>enabled
         <select id="enabled">
           <option value="true">on</option>
@@ -66,38 +76,53 @@
     </div>
     <div class="actions">
       <button type="button" id="reload">모델 새로고침</button>
-      <button type="button" class="secondary" id="save">저장</button>
+      <button type="button" class="secondary" id="save">팩 저장</button>
     </div>
     <p id="saveMsg" class="hint"></p>
   </section>
-
+  <section>
+    <h2>Jev 스킬 / MCP</h2>
+    <p id="installStatus" class="hint"></p>
+    <div class="actions">
+      <button type="button" id="installSkill">스킬 원클릭 설치</button>
+      <button type="button" class="secondary" id="installMcp">MCP 원클릭 설치</button>
+    </div>
+    <p class="hint">스킬: ~/.agents, ~/.codex, ~/.claude. MCP: Codex config.toml + Claude mcpServers. 키는 설정 파일에 넣지 않습니다.</p>
+    <p id="installMsg" class="hint"></p>
+  </section>
   <section>
     <h2>최근 게이트</h2>
     <table>
       <thead>
-        <tr><th>시각</th><th>판정</th><th>역할</th><th>in</th><th>out</th><th>conf</th></tr>
+        <tr><th>시각</th><th>판정</th><th>역할</th><th>in</th><th>out</th><th>effort</th><th>conf</th></tr>
       </thead>
       <tbody id="events"></tbody>
     </table>
-    <p class="hint">프롬프트 본문은 저장하지 않습니다.</p>
+    <p class="hint">프롬프트 본문과 API 키는 저장하지 않습니다.</p>
   </section>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
+const EFFORTS = ["", "low", "medium", "high", "xhigh", "max", "ultra"];
 function optionList(models, selected, emptyLabel) {
   const opts = [`<option value="">${emptyLabel}</option>`];
   for (const m of models) {
-    const id = m.id || m;
+    const id = String(m.id || m).replaceAll('"', "");
     opts.push(`<option value="${id}" ${id === selected ? "selected" : ""}>${id}</option>`);
   }
   return opts.join("");
 }
+function effortList(selected) {
+  return EFFORTS.map(v => `<option value="${v}" ${v === (selected || "") ? "selected" : ""}>${v || "(기본)"}</option>`).join("");
+}
 async function load() {
-  const [status, models, pack, events] = await Promise.all([
+  const [status, models, pack, events, secrets, install] = await Promise.all([
     fetch("/api/status").then(r => r.json()),
     fetch("/v1/models").then(r => r.json()).catch(() => ({ data: [] })),
     fetch("/api/pack").then(r => r.json()),
     fetch("/api/events").then(r => r.json()),
+    fetch("/api/secrets").then(r => r.json()),
+    fetch("/api/install").then(r => r.json()),
   ]);
   const health = $("health");
   if (status.opencodex_ok) {
@@ -107,38 +132,60 @@ async function load() {
     health.className = "status bad";
     health.textContent = "OpenCodex 연결 실패. :10100이 켜져 있는지 보세요.";
   }
+  $("keyStatus").textContent = (secrets.jev_key_set || status.jev_key_set) ? "TypeSafe 키: 설정됨" : "TypeSafe 키: 없음 (rewrite 없이 통과)";
   const list = models.data || [];
   $("home").innerHTML = optionList(list, pack.home_model, "(home 선택)");
   for (const role of ["implement", "research", "write"]) {
     const current = (pack.roles && pack.roles[role] && pack.roles[role].model) || "";
+    const effort = (pack.roles && pack.roles[role] && pack.roles[role].reasoning_effort) || "";
     $(role).innerHTML = optionList(list, current, "(비움)");
+    $(role + "Effort").innerHTML = effortList(effort);
   }
   $("floor").value = pack.confidence_floor ?? 0.6;
   $("enabled").value = pack.enabled === false ? "false" : "true";
   $("events").innerHTML = (events.events || []).map(e =>
-    `<tr><td>${e.at || ""}</td><td>${e.status}</td><td>${e.role}</td><td>${e.model_in}</td><td>${e.model_out}</td><td>${e.confidence}</td></tr>`
-  ).join("") || `<tr><td colspan="6">아직 없음</td></tr>`;
+    `<tr><td>${e.at || ""}</td><td>${e.status}</td><td>${e.role}</td><td>${e.model_in}</td><td>${e.model_out}</td><td>${e.reasoning_effort || ""}</td><td>${e.confidence}</td></tr>`
+  ).join("") || `<tr><td colspan="7">아직 없음</td></tr>`;
+  const bits = [];
+  if ((install.skills || []).length) bits.push("스킬 " + install.skills.length + "곳");
+  if (install.mcp_codex) bits.push("Codex MCP");
+  if (install.mcp_claude) bits.push("Claude MCP");
+  $("installStatus").textContent = bits.length ? ("설치됨: " + bits.join(", ")) : "아직 설치 안 됨";
 }
 $("reload").onclick = load;
 $("save").onclick = async () => {
-  const pack = {
-    home_model: $("home").value,
-    confidence_floor: Number($("floor").value),
-    enabled: $("enabled").value === "true",
-    roles: {},
-  };
+  const pack = { home_model: $("home").value, confidence_floor: Number($("floor").value), enabled: $("enabled").value === "true", roles: {} };
   const when = {
     implement: "Write or edit code in the repo.",
     research: "Look up current facts, prices, or docs.",
     write: "Draft or edit prose. Korean quality may matter.",
   };
   for (const role of ["implement", "research", "write"]) {
-    if ($(role).value) pack.roles[role] = { model: $(role).value, when: when[role] };
+    if ($(role).value) pack.roles[role] = { model: $(role).value, when: when[role], reasoning_effort: $(role + "Effort").value };
   }
   const res = await fetch("/api/pack", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(pack) });
-  $("saveMsg").textContent = res.ok ? "저장됨" : "저장 실패";
+  $("saveMsg").textContent = res.ok ? "팩 저장됨" : "저장 실패";
   load();
 };
+$("saveKey").onclick = async () => {
+  const res = await fetch("/api/secrets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ typesafe_api_key: $("apiKey").value }) });
+  $("apiKey").value = "";
+  $("keyMsg").textContent = res.ok ? "키 저장됨 (화면에 다시 안 보임)" : "키 저장 실패";
+  load();
+};
+$("clearKey").onclick = async () => {
+  await fetch("/api/secrets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clear: true }) });
+  $("keyMsg").textContent = "키 삭제됨";
+  load();
+};
+async function install(kind) {
+  const res = await fetch("/api/install", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind }) });
+  const data = await res.json();
+  $("installMsg").textContent = data.ok ? (kind + " 설치됨") : (data.error || "실패");
+  load();
+}
+$("installSkill").onclick = () => install("skill");
+$("installMcp").onclick = () => install("mcp");
 load();
 setInterval(load, 4000);
 </script>

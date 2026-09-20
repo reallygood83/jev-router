@@ -1,7 +1,7 @@
 from .pack import filled_roles
 
 
-def decide(pack, incoming_model, classification=None, sticky_model="", error=""):
+def decide(pack, incoming_model, classification=None, sticky_model="", sticky_effort="", error=""):
     incoming = str(incoming_model or "").strip()
     home = str((pack or {}).get("home_model") or "").strip()
     try:
@@ -10,7 +10,7 @@ def decide(pack, incoming_model, classification=None, sticky_model="", error="")
         floor = 0.6
     roles = filled_roles(pack)
 
-    def result(status, model, role="-", confidence=0.0, reason=""):
+    def result(status, model, role="-", confidence=0.0, reason="", effort=""):
         out = model or incoming
         return {
             "status": status,
@@ -18,6 +18,7 @@ def decide(pack, incoming_model, classification=None, sticky_model="", error="")
             "confidence": confidence,
             "model_in": incoming,
             "model_out": out,
+            "reasoning_effort": effort or "",
             "reason": reason,
         }
 
@@ -30,7 +31,7 @@ def decide(pack, incoming_model, classification=None, sticky_model="", error="")
     if incoming != home:
         return result("pass", incoming, reason="incoming model is not home")
     if sticky_model:
-        return result("sticky", sticky_model, role="sticky", reason="thread sticky model")
+        return result("sticky", sticky_model, role="sticky", reason="thread sticky model", effort=sticky_effort)
     if not classification:
         return result("pass", incoming, reason="no classification")
 
@@ -55,6 +56,14 @@ def decide(pack, incoming_model, classification=None, sticky_model="", error="")
     target = str(entry.get("model") or "").strip()
     if not target:
         return result("pass", incoming, role=role, confidence=confidence, reason="role has no model")
-    if target == incoming:
+    effort = str(entry.get("reasoning_effort") or "").strip()
+    if target == incoming and not effort:
         return result("pass", incoming, role=role, confidence=confidence, reason="already on role model")
-    return result("rewrite", target, role=role, confidence=confidence, reason="rewrote home to role model")
+    return result(
+        "rewrite",
+        target,
+        role=role,
+        confidence=confidence,
+        reason="rewrote home to role model",
+        effort=effort,
+    )
