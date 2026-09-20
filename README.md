@@ -25,16 +25,16 @@ jev-gate
 
 Then:
 
-1. Open http://127.0.0.1:10111/
+1. Open http://127.0.0.1:10115/
 2. Save a TypeSafe API key (stored in `~/.config/jev-gate/secrets.json`, mode 600, never shown again)
 3. Set home + role models from the live OpenCodex catalog
-4. Point Codex / any OpenAI-compatible client at `http://127.0.0.1:10111/v1`
+4. Point Codex / any OpenAI-compatible client at `http://127.0.0.1:10115/v1`
 5. Leave the picker on **home**. Search prompts can rewrite to research; code prompts to implement.
 
 Without a key, the gate is a pure proxy (`error-pass`). If OpenCodex is down, the client sees the upstream error.
 
 ```bash
-jev-gate --port 10111 --upstream http://127.0.0.1:10100
+jev-gate --port 10115 --upstream http://127.0.0.1:10100
 ```
 
 ## jev-router CLI
