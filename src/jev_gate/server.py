@@ -352,11 +352,31 @@ class GateHandler(BaseHTTPRequestHandler):
         lines = [f"{self.command} {self.path} HTTP/1.1"]
         host = f"{self.state.upstream_host}:{self.state.upstream_port}"
         lines.append(f"Host: {host}")
+        seen_upgrade = False
         for key, value in self.headers.items():
-            if str(key).lower() == "host":
+            lower = str(key).lower()
+            if lower == "host":
                 continue
+            if lower == "upgrade":
+                seen_upgrade = True
             lines.append(f"{key}: {value}")
+        if not seen_upgrade and self._route().rstrip("/") == "/v1/responses":
+            lines.append("Upgrade: websocket")
+            lines.append("Connection: Upgrade")
         upstream.sendall(("\r\n".join(lines) + "\r\n\r\n").encode("iso-8859-1"))
+        leftover = b""
+        try:
+            buf = getattr(self.rfile, "_buffer", None)
+            if buf:
+                leftover = bytes(buf)
+                if hasattr(buf, "clear"):
+                    buf.clear()
+        except Exception:
+            leftover = b""
+        if leftover:
+            upstream.sendall(leftover)
+        self.state.record({"status": "ws-pass", "role": "-", "confidence": 0, "model_in": "", "model_out": ""})
+        print("[jev-gate] websocket", self.command, self.path)
         client = self.connection
         sockets = [client, upstream]
         try:
