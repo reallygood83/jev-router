@@ -143,7 +143,7 @@ async function loadMeta() {
   const stale = $("stale");
   if (secretsRes.status === 401 || secrets.error) {
     stale.style.display = "block";
-    stale.textContent = "이 탭은 예전 게이트입니다. 키/팩 저장이 안 됩니다. 터미널에서 게이트를 재시작한 뒤 http://127.0.0.1:10111/ 를 여세요.";
+    stale.textContent = "이 탭의 게이트는 저장을 못합니다. http://127.0.0.1:10115/ 를 새로 여세요.";
   } else {
     stale.style.display = "none";
   }
@@ -203,6 +203,10 @@ $("installMcp").onclick = () => install("mcp");
 loadPackForm();
 loadMeta();
 setInterval(loadMeta, 4000);
+</script>
+</body>
+</html>
+
 </script>
 </body>
 </html>

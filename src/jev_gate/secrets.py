@@ -35,7 +35,11 @@ def load_key(path=None):
 
 def save_key(key, path=None, clear=False):
     target = Path(path or default_secrets_path())
-    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        target = config_dir() / "secrets.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
     payload = _read(target)
     if clear:
         payload.pop("typesafe_api_key", None)

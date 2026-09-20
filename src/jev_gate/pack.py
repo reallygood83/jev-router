@@ -107,7 +107,11 @@ def load_pack(path=None):
 
 def save_pack(pack, path=None):
     target = Path(path or default_pack_path())
-    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        target = config_dir() / "pack.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
     payload = normalize_pack(pack)
     payload.pop("_error", None)
     temporary = target.with_suffix(target.suffix + ".tmp")
