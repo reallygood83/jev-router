@@ -58,10 +58,20 @@ def _base_output(task, plan: dict[str, Any]) -> dict[str, Any]:
 
 def _static_plan(models, mode, model_ids=None) -> dict[str, Any]:
     by_id = {model.id: model for model in models}
-    if isinstance(model_ids, str):
-        model_ids = [model_ids]
-    selected = [by_id[model_id] for model_id in model_ids or () if model_id in by_id]
-    ordered = selected or sorted(models, key=lambda model: (model.quality_prior, -model.input_cost_per_1k), reverse=True)
+    if model_ids is not None:
+        if isinstance(model_ids, str):
+            model_ids = [model_ids]
+        requested = list(model_ids)
+        if not requested or (mode == "single" and len(requested) != 1) or (mode == "orchestration" and len(requested) < 2):
+            return {"status": "blocked", "reason": "fixed baseline requires the configured model IDs"}
+        missing = [model_id for model_id in requested if model_id not in by_id]
+        if missing:
+            return {"status": "blocked", "reason": "fixed baseline is not eligible: " + ", ".join(missing)}
+        ordered = [by_id[model_id] for model_id in requested]
+    else:
+        ordered = sorted(models, key=lambda model: (model.quality_prior, -model.input_cost_per_1k), reverse=True)
+    if not ordered:
+        return {"status": "blocked", "reason": "no approved healthy models"}
     captain = ordered[0]
     if mode == "single":
         return {
@@ -200,16 +210,21 @@ def cmd_route(args, parts):
     candidates = eligible_models(models, _health(config), ttl_seconds=args.health_ttl)
     gate = _strategy_gate(config)
     plan: dict[str, Any]
-    if args.single:
+    if not candidates:
+        plan = {"status": "blocked", "reason": "no approved healthy models", "source": "health"}
+    elif args.single:
         plan = _static_plan(candidates, "single") if candidates else {"status": "blocked", "reason": "no approved healthy models"}
     elif args.orch:
         plan = _static_plan(candidates, "orchestration") if candidates else {"status": "blocked", "reason": "no approved healthy models"}
     elif gate and gate["strategy"] in {"single", "static-team"}:
         policy = config.get("policy", {})
-        ids = [policy.get("single_model_id")] if gate["strategy"] == "single" else policy.get("static_team_ids", [])
-        plan = _static_plan(candidates, "single" if gate["strategy"] == "single" else "orchestration", ids)
-        plan["source"] = "policy"
-        plan["strategy_gate"] = gate
+        ids = [policy.get("single_model_id")] if gate["strategy"] == "single" and policy.get("single_model_id") else policy.get("static_team_ids")
+        if ids is None:
+            plan = {"status": "blocked", "reason": "policy baseline model IDs are not configured", "source": "policy", "strategy_gate": gate}
+        else:
+            plan = _static_plan(candidates, "single" if gate["strategy"] == "single" else "orchestration", ids)
+            plan["source"] = "policy"
+            plan["strategy_gate"] = gate
     else:
         jev = config.get("jev", {})
         response_file = _optional_path(args.response_file or jev.get("response_file"), args.config)
@@ -237,6 +252,16 @@ def cmd_route(args, parts):
 
 def cmd_evaluate(args):
     rows = load_jsonl(args.input)
+    if args.evidence_class == "live":
+        valid = all(
+            row.get("evidence_class") == "live"
+            and row.get("executed") is True
+            and row.get("quality_source") in {"human", "judge"}
+            for row in rows
+        )
+        if not rows or not valid:
+            print(json.dumps({"verdict": "blocked", "reason": "live evidence requires executed rows scored by human or judge"}, ensure_ascii=False))
+            return 2
     weights = load_weights(args.weights)
     result = evaluate_rows(rows, weights, seed=args.seed, bootstrap_samples=args.bootstrap_samples)
     report = render_report(result, weights, args.evidence_class)
@@ -265,7 +290,7 @@ def cmd_benchmark(args):
         response_file=_optional_path(args.response_file or jev.get("response_file"), args.config),
     )
     tasks = load_jsonl(args.tasks)
-    rows = run_benchmark(tasks, candidates, single_id, team_ids, client, seed=args.seed, execute=args.execute)
+    rows = run_benchmark(tasks, candidates, single_id, team_ids, client, seed=args.seed, execute=args.execute, quality_source=args.quality_source)
     save_jsonl(args.benchmark_output, rows)
     print(json.dumps({"status": "completed", "rows": len(rows), "output": args.benchmark_output, "executed": args.execute}, ensure_ascii=False, indent=2))
     return 0
@@ -285,6 +310,7 @@ def build_parser():
     parser.add_argument("--single-id")
     parser.add_argument("--team-ids")
     parser.add_argument("--evidence-class", default="unverified")
+    parser.add_argument("--quality-source", choices=["task", "human", "judge"], default="task")
     parser.add_argument("--ids")
     parser.add_argument("--approve-all", action="store_true")
     parser.add_argument("--single", action="store_true")

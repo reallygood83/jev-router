@@ -41,7 +41,7 @@ def _fixed_plan(mode, model_ids):
     }
 
 
-def run_benchmark(tasks, models, single_id, team_ids, jev_client, runner=None, seed=0, execute=False):
+def run_benchmark(tasks, models, single_id, team_ids, jev_client, runner=None, seed=0, execute=False, quality_source="task"):
     by_id = {model.id: model for model in models}
     if single_id not in by_id or not team_ids or any(model_id not in by_id for model_id in team_ids):
         raise ValueError("benchmark references unknown registered model")
@@ -88,6 +88,9 @@ def run_benchmark(tasks, models, single_id, team_ids, jev_client, runner=None, s
                     "model_count": result.get("model_count", 0),
                     "status": "ok" if result.get("ok") else "failed",
                     "route_source": plan.get("source", arm),
+                    "evidence_class": "live" if execute else "fixture",
+                    "executed": bool(execute),
+                    "quality_source": quality_source,
                 }
             )
     return rows

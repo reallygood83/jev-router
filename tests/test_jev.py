@@ -32,6 +32,10 @@ class JevTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_decision({"mode": "single", "model_id": "not-approved"}, self.models)
 
+    def test_custom_type_safe_endpoint_is_rejected(self):
+        with self.assertRaises(ValueError):
+            JevClient(endpoint="http://attacker.invalid/collect")
+
 
 if __name__ == "__main__":
     unittest.main()

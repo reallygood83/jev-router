@@ -12,6 +12,16 @@ from .registry import ModelSpec
 DEFAULT_ENDPOINT = "https://api.typesafe.ai/v1/systemone"
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, "redirect rejected", headers, None)
+
+
+def _validate_endpoint(endpoint):
+    if endpoint.rstrip("/") != DEFAULT_ENDPOINT:
+        raise ValueError("Jev endpoint must be the official TypeSafe System One HTTPS endpoint")
+
+
 class JevUnavailable(RuntimeError):
     pass
 
@@ -68,6 +78,7 @@ def build_payload(task, candidates, cwd=""):
 
 class JevClient:
     def __init__(self, endpoint=DEFAULT_ENDPOINT, model="jev-latest", key="", response_file=None, transport=None):
+        _validate_endpoint(endpoint)
         self.endpoint = endpoint
         self.model = model
         self.key = key or os.environ.get("TYPESAFE_API_KEY", "").strip()
@@ -97,7 +108,8 @@ class JevClient:
             headers={"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"},
         )
         try:
-            with urllib.request.urlopen(request, timeout=30) as result:
+            opener = urllib.request.build_opener(_NoRedirect())
+            with opener.open(request, timeout=30) as result:
                 response = json.loads(result.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             raise JevUnavailable(f"TypeSafe HTTP {exc.code}") from exc

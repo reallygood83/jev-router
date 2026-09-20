@@ -79,17 +79,18 @@ def evaluate_rows(rows, weights, seed=0, bootstrap_samples=1000):
         grouped[task_id][arm] = _utility(row, weights)
 
     deltas = []
-    for arms in grouped.values():
-        if "jev" not in arms:
+    incomplete_tasks = []
+    for task_id, arms in grouped.items():
+        if not all(arm in arms for arm in ("single", "static-team", "jev")):
+            incomplete_tasks.append(task_id)
             continue
-        baselines = [arms[arm] for arm in ("single", "static-team") if arm in arms]
-        if baselines:
-            deltas.append(arms["jev"] - max(baselines))
+        deltas.append(arms["jev"] - max(arms["single"], arms["static-team"]))
 
-    if len(deltas) < min_pairs:
+    if incomplete_tasks or len(deltas) < min_pairs:
         return {
             "verdict": "insufficient_evidence",
             "pairs": len(deltas),
+            "incomplete_tasks": incomplete_tasks,
             "delta_mean": mean(deltas) if deltas else 0.0,
             "delta_lcb95": 0.0,
             "delta_ucb95": 0.0,
@@ -112,6 +113,7 @@ def evaluate_rows(rows, weights, seed=0, bootstrap_samples=1000):
     return {
         "verdict": verdict,
         "pairs": len(deltas),
+        "incomplete_tasks": [],
         "delta_mean": delta_mean,
         "delta_lcb95": delta_lcb95,
         "delta_ucb95": delta_ucb95,
@@ -144,6 +146,7 @@ def render_report(result, weights, evidence_class="unverified"):
             f"- Evidence class: {evidence_class}",
             f"- Verdict: {verdict}",
             f"- Paired holdout tasks: {result['pairs']}",
+            f"- Incomplete tasks: {len(result.get('incomplete_tasks', []))}",
             f"- Mean utility delta (Jev - best baseline): {result['delta_mean']:.6f}",
             f"- Bootstrap 95% CI: [{result['delta_lcb95']:.6f}, {result['delta_ucb95']:.6f}]",
             f"- Required delta: {float(weights.get('delta', 0.0)):.6f}",

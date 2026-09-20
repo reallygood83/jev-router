@@ -51,7 +51,7 @@ For each task, utility is:
 The publish gate uses the holdout difference between Jev and the best baseline. Jev passes only when the bootstrap lower 95% confidence bound is greater than `delta`. Fixture data tests the evaluator and is labeled `fixture`; it is not evidence that Jev improves real model quality.
 
 ```bash
-jev-router benchmark --config config/example.json --tasks tasks.jsonl --execute --benchmark-output artifacts/benchmark.jsonl
+jev-router benchmark --config config/example.json --tasks tasks.jsonl --execute --quality-source human --benchmark-output artifacts/benchmark.jsonl
 jev-router evaluate --input artifacts/benchmark.jsonl --weights config/weights.toml --output artifacts/effectiveness.md --evidence-class live
 ```
 
