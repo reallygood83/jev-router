@@ -18,7 +18,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def _validate_endpoint(endpoint):
-    if endpoint.rstrip("/") != DEFAULT_ENDPOINT:
+    if endpoint != DEFAULT_ENDPOINT:
         raise ValueError("Jev endpoint must be the official TypeSafe System One HTTPS endpoint")
 
 
@@ -46,10 +46,15 @@ def _approved_candidates(candidates):
     return [model for model in candidates if model.approved and model.enabled]
 
 
-def build_payload(task, candidates, cwd="", health=None, health_ttl=3600):
+def build_payload(task, candidates, cwd="", health=None, health_ttl=3600, require_fingerprint=True):
     if health is None:
         raise ValueError("Jev payload requires fresh health evidence")
-    candidates = eligible_models(_approved_candidates(candidates), health, ttl_seconds=health_ttl)
+    candidates = eligible_models(
+        _approved_candidates(candidates),
+        health,
+        ttl_seconds=health_ttl,
+        require_fingerprint=require_fingerprint,
+    )
     rows = [_candidate_dict(model) for model in candidates]
     criteria = {model.id: model.when or model.purpose or model.model for model in candidates}
     return {
@@ -132,12 +137,19 @@ def _answer_value(answers, name, field):
     return value
 
 
-def parse_decision(response, candidates, threshold=0.6):
+def parse_decision(response, candidates, threshold=0.6, health=None, health_ttl=3600, require_fingerprint=True):
     if not isinstance(response, dict):
         raise ValueError("Jev response must be an object")
     if not math.isfinite(float(threshold)) or not 0 <= float(threshold) <= 1:
         raise ValueError("orchestrator threshold must be between 0 and 1")
-    candidates = _approved_candidates(candidates)
+    if health is None:
+        raise ValueError("Jev decision requires fresh health evidence")
+    candidates = eligible_models(
+        _approved_candidates(candidates),
+        health,
+        ttl_seconds=health_ttl,
+        require_fingerprint=require_fingerprint,
+    )
     allowed = {model.id: model for model in candidates}
     candidate_body = response.get("decision", response)
     body = candidate_body if isinstance(candidate_body, dict) else response
@@ -185,15 +197,34 @@ def parse_decision(response, candidates, threshold=0.6):
     }
 
 
-def route_task(task, candidates, client, cwd="", threshold=0.6, health=None, health_ttl=3600):
+def route_task(task, candidates, client, cwd="", threshold=0.6, health=None, health_ttl=3600, require_fingerprint=True):
     if health is None:
         return {"status": "blocked", "reason": "Jev routing requires fresh health evidence"}
-    candidates = eligible_models(_approved_candidates(candidates), health, ttl_seconds=health_ttl)
+    candidates = eligible_models(
+        _approved_candidates(candidates),
+        health,
+        ttl_seconds=health_ttl,
+        require_fingerprint=require_fingerprint,
+    )
     if not candidates:
         return {"status": "blocked", "reason": "no approved healthy models"}
-    payload = build_payload(task, candidates, cwd, health=health, health_ttl=health_ttl)
+    payload = build_payload(
+        task,
+        candidates,
+        cwd,
+        health=health,
+        health_ttl=health_ttl,
+        require_fingerprint=require_fingerprint,
+    )
     response, source, latency_ms = client.ask(payload)
-    decision = parse_decision(response, candidates, threshold)
+    decision = parse_decision(
+        response,
+        candidates,
+        threshold,
+        health=health,
+        health_ttl=health_ttl,
+        require_fingerprint=require_fingerprint,
+    )
     return {
         "status": "ok",
         **decision,

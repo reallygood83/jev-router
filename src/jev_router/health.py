@@ -1,7 +1,10 @@
 import subprocess
 import time
+import os
 from datetime import datetime, timezone
 from pathlib import Path
+
+from .registry import ModelSpec, model_fingerprint
 
 
 _PROMPT = "Reply with exactly: OK"
@@ -16,9 +19,9 @@ def _model_flag(model):
 def command_for_model(model):
     kind = (model.kind or model.provider).lower()
     if kind == "codex":
-        return ["codex", "exec", "--skip-git-repo-check", _PROMPT, *model.argv]
+        return ["codex", "exec", "--skip-git-repo-check", _PROMPT, *_model_flag(model), *model.argv]
     if kind == "grok":
-        return ["grok", "-p", _PROMPT, "--max-turns", "1", *model.argv]
+        return ["grok", "-p", _PROMPT, "--max-turns", "1", *_model_flag(model), *model.argv]
     if kind == "claude":
         return ["claude", "--print", "--output-format", "text", _PROMPT, *_model_flag(model), *model.argv]
     if kind in {"cursor", "agent"}:
@@ -29,6 +32,9 @@ def command_for_model(model):
 
 
 def _run(command, timeout):
+    environment = dict(os.environ)
+    for name in ("TYPESAFE_API_KEY", "JEV_EVIDENCE_KEY", "JEV_SCORER_KEY"):
+        environment.pop(name, None)
     completed = subprocess.run(
         command,
         cwd=str(Path.home()),
@@ -37,6 +43,7 @@ def _run(command, timeout):
         text=True,
         timeout=timeout,
         check=False,
+        env=environment,
     )
     return completed.returncode, completed.stdout, completed.stderr
 
@@ -97,4 +104,10 @@ def probe_model(model, runner=None, timeout_seconds=30):
             "checked_at": checked_at,
             "latency_ms": latency_ms,
         }
-    return {"ok": True, "reason": "ok", "checked_at": checked_at, "latency_ms": latency_ms}
+    return {
+        "ok": True,
+        "reason": "ok",
+        "checked_at": checked_at,
+        "latency_ms": latency_ms,
+        "model_fingerprint": model_fingerprint(model),
+    }

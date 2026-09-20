@@ -51,27 +51,33 @@ For each task, utility is:
 The publish gate uses the holdout difference between Jev and the best baseline. Jev passes only when the bootstrap lower 95% confidence bound is greater than `delta`. Fixture data tests the evaluator and is labeled `fixture`; it is not evidence that Jev improves real model quality.
 
 ```bash
-jev-router benchmark --config config/example.json --tasks tasks.jsonl --execute --benchmark-output artifacts/benchmark.jsonl
+# deterministic evaluator fixture; effective fixture results intentionally exit 2
+jev-router evaluate --input artifacts/benchmark.jsonl --weights config/weights.toml --output artifacts/effectiveness.md --evidence-class fixture
+
+# after registering and health-checking your real model pool
+jev-router benchmark --config ~/.config/jev-router/config.json --tasks /path/to/holdout.jsonl --execute --benchmark-output artifacts/benchmark.jsonl
 jev-router evaluate --input artifacts/benchmark.jsonl --weights config/weights.toml --scores artifacts/scores.jsonl --output artifacts/effectiveness.md --evidence-class live
 ```
 
-An executed benchmark records runtime metrics and an SHA-256 hash of each final output, but never treats task-authored quality as evidence. A separate `scores.jsonl` must contain one independently supplied record per task and arm, with the matching `output_sha256`, `quality` from 0 to 1, `source` set to `human` or `judge`, and a non-empty `scorer_id`.
+Before a live run, provide two secrets outside the task and evidence files: `JEV_EVIDENCE_KEY` is used to sign the execution manifest and `JEV_SCORER_KEY` is used by the independent scoring process to sign score records. The router never passes either key to provider subprocesses.
+
+An executed benchmark records runtime metrics, prompt/output hashes, model count, route source, and an HMAC-signed execution manifest ID, but never treats task-authored quality as evidence. A separate `scores.jsonl` must contain one independently supplied and signed record per task and arm, with the matching `output_sha256`, `quality` from 0 to 1, `source` set to `human` or `judge`, and a non-empty `scorer_id`. Live publication also rejects fixture-backed routes, blocked executions, missing model runs, mismatched model fingerprints, and stale health records.
 
 Prompts and provider output are not written to the JSONL evidence file. A score with a missing or mismatched output hash is rejected, so changing a task file or relabeling fixture quality cannot create a live result.
 
 Example score record:
 
 ```json
-{"task_id":"task-001","arm":"single","output_sha256":"...64 lowercase hex...","quality":0.82,"source":"human","scorer_id":"reviewer-01"}
+{"task_id":"task-001","arm":"single","output_sha256":"...64 lowercase hex...","quality":0.82,"source":"human","scorer_id":"reviewer-01","score_signature":"...64 lowercase hex..."}
 ```
 
 ## 한국어
 
 `jev-router`는 로컬에서 실제 사용 가능한 AI 모델을 발견하고, 사용자가 승인한 모델 중 health check를 통과한 후보만 Jev에게 전달하는 얇은 라우터입니다. 일반 프롬프트를 가로채지 않고 사용자가 명시적으로 호출했을 때만 동작합니다.
 
-처음에는 `discover`로 목록을 확인한 뒤 `register --ids ...`로 허용할 모델을 직접 승인합니다. 이후 `health`가 인증 만료·실패·빈 응답 모델을 제외하고, Jev가 단독 모델 또는 작은 팀을 선택합니다. 실제 실행은 각 provider CLI나 Herdr 같은 실행기가 담당합니다.
+처음에는 `discover`로 목록을 확인한 뒤 `register --ids ...`로 허용할 모델을 직접 승인합니다. 이후 `health`가 인증 만료·실패·빈 응답·모델 설정이 바뀐 모델을 제외하고, Jev가 단독 모델 또는 작은 팀을 선택합니다. 실제 실행은 각 provider CLI나 Herdr 같은 실행기가 담당합니다.
 
-효과는 단일 모델, 고정 팀, Jev 선택을 같은 paired holdout 작업으로 비교합니다. 품질·비용·시간·실패·라우팅 오버헤드를 목적함수에 넣고, Jev가 최선의 baseline보다 `delta` 이상 높다는 95% bootstrap 하한을 통과해야 실제 효과라고 판정합니다. 실행 결과의 품질은 별도 output hash 결합 점수 파일에서만 주입되며, fixture 결과만으로는 GitHub publish 조건을 충족하지 않습니다.
+효과는 단일 모델, 고정 팀, Jev 선택을 같은 paired holdout 작업으로 비교합니다. 품질·비용·시간·실패·라우팅 오버헤드를 목적함수에 넣고, Jev가 최선의 baseline보다 `delta` 이상 높다는 95% bootstrap 하한을 통과해야 실제 효과라고 판정합니다. 실행 결과의 품질은 서명된 실행 manifest와 별도 output hash 결합 점수 파일에서만 주입되며, fixture 결과만으로는 GitHub publish 조건을 충족하지 않습니다.
 
 ## Evidence boundary
 

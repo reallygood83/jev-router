@@ -1,5 +1,6 @@
 import ast
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -102,6 +103,7 @@ def _command(command, timeout, runner=None):
                 text=True,
                 timeout=timeout,
                 check=False,
+                env={name: value for name, value in os.environ.items() if name not in {"TYPESAFE_API_KEY", "JEV_EVIDENCE_KEY", "JEV_SCORER_KEY"}},
             )
         except subprocess.TimeoutExpired:
             return None, "timeout"

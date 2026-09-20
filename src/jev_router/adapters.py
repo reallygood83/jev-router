@@ -1,7 +1,10 @@
 import subprocess
 import time
+import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+from .registry import eligible_models
 
 
 def _model_flag(model):
@@ -13,9 +16,9 @@ def _model_flag(model):
 def command_for_prompt(model, prompt):
     kind = (model.kind or model.provider).lower()
     if kind == "codex":
-        return ["codex", "exec", "--skip-git-repo-check", prompt, *model.argv]
+        return ["codex", "exec", "--skip-git-repo-check", prompt, *_model_flag(model), *model.argv]
     if kind == "grok":
-        return ["grok", "-p", prompt, *model.argv]
+        return ["grok", "-p", prompt, *_model_flag(model), *model.argv]
     if kind == "claude":
         return ["claude", "--print", "--output-format", "text", prompt, *_model_flag(model), *model.argv]
     if kind in {"cursor", "agent"}:
@@ -56,6 +59,9 @@ def _latency(started):
 
 
 def _run(command, timeout):
+    environment = dict(os.environ)
+    for name in ("TYPESAFE_API_KEY", "JEV_EVIDENCE_KEY", "JEV_SCORER_KEY"):
+        environment.pop(name, None)
     return subprocess.run(
         command,
         cwd=str(Path.home()),
@@ -64,13 +70,23 @@ def _run(command, timeout):
         text=True,
         timeout=timeout,
         check=False,
+        env=environment,
     )
 
 
-def execute_plan(plan, registry, prompt, timeout_seconds=120, runner=None):
+def execute_plan(plan, registry, prompt, timeout_seconds=120, runner=None, health=None, health_ttl=3600, require_fingerprint=True):
     by_id = {model.id: model for model in registry}
     if plan.get("status") != "ok":
         return {"ok": False, "reason": plan.get("reason", "route blocked"), "model_count": 0, "results": []}
+    if health is None:
+        return {"ok": False, "reason": "execution requires fresh health evidence", "model_count": 0, "results": []}
+    healthy = {
+        model.id: model
+        for model in eligible_models(registry, health, ttl_seconds=health_ttl, require_fingerprint=require_fingerprint)
+    }
+    selected_ids = [plan.get("worker_id"), plan.get("captain_id"), *plan.get("worker_ids", [])]
+    if any(model_id not in healthy for model_id in selected_ids if model_id):
+        return {"ok": False, "reason": "execution plan contains an ineligible model", "model_count": 0, "results": []}
     if plan["mode"] == "single":
         model = by_id[plan["worker_id"]]
         result = run_model(model, prompt, timeout_seconds, runner)

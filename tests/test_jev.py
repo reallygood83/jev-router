@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Any, cast
 
 from jev_router.jev import JevClient, build_payload, parse_decision, route_task
-from jev_router.registry import ModelSpec
+from jev_router.registry import ModelSpec, model_fingerprint
 
 
 class JevTests(unittest.TestCase):
@@ -16,7 +16,10 @@ class JevTests(unittest.TestCase):
             ModelSpec(id="strong", provider="claude", model="opus", approved=True),
         ]
         checked_at = datetime.now(timezone.utc).isoformat()
-        self.health = {model.id: {"ok": True, "checked_at": checked_at} for model in self.models}
+        self.health = {
+            model.id: {"ok": True, "checked_at": checked_at, "model_fingerprint": model_fingerprint(model)}
+            for model in self.models
+        }
 
     def test_payload_is_limited_to_approved_healthy_candidates(self):
         unapproved = ModelSpec(id="unapproved", provider="grok", model="grok", approved=False)
@@ -27,7 +30,7 @@ class JevTests(unittest.TestCase):
 
     def test_jev_decision_selects_captain_and_workers(self):
         response = {"mode": "orchestration", "captain_id": "strong", "worker_ids": ["cheap", "strong"]}
-        decision = parse_decision(response, self.models)
+        decision = parse_decision(response, self.models, health=self.health)
         self.assertEqual(decision["mode"], "orchestration")
         self.assertEqual(decision["captain_id"], "strong")
 
@@ -38,11 +41,15 @@ class JevTests(unittest.TestCase):
 
     def test_jev_cannot_select_outside_candidate_set(self):
         with self.assertRaises(ValueError):
-            parse_decision({"mode": "single", "model_id": "not-approved"}, self.models)
+            parse_decision({"mode": "single", "model_id": "not-approved"}, self.models, health=self.health)
 
     def test_jev_orchestration_requires_two_models(self):
         with self.assertRaises(ValueError):
-            parse_decision({"mode": "orchestration", "captain_id": "cheap", "worker_ids": ["cheap"]}, self.models)
+            parse_decision(
+                {"mode": "orchestration", "captain_id": "cheap", "worker_ids": ["cheap"]},
+                self.models,
+                health=self.health,
+            )
 
     def test_route_requires_health_evidence(self):
         client = JevClient(transport=lambda endpoint, body, key: {"mode": "single", "model_id": "cheap"})

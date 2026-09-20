@@ -1,11 +1,13 @@
 import random
 import math
 import json
+import os
 import re
 from collections import defaultdict
 from statistics import mean
 from pathlib import Path
 
+from .evidence import verify_record
 
 _SCORE_SOURCES = {"human", "judge"}
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -142,9 +144,16 @@ def load_jsonl(path):
     return rows
 
 
-def merge_live_scores(rows, scores):
+def merge_live_scores(rows, scores, evidence_key="", scorer_key=""):
+    evidence_key = evidence_key or os.environ.get("JEV_EVIDENCE_KEY", "").strip()
+    scorer_key = scorer_key or os.environ.get("JEV_SCORER_KEY", "").strip()
+    if not evidence_key:
+        raise ValueError("live evidence requires JEV_EVIDENCE_KEY")
+    if not scorer_key:
+        raise ValueError("live evidence requires JEV_SCORER_KEY")
     benchmark_rows = list(rows)
     expected = {}
+    manifest_ids = set()
     for row in benchmark_rows:
         key = (row.get("task_id"), row.get("arm"))
         output_sha256 = row.get("output_sha256")
@@ -152,9 +161,32 @@ def merge_live_scores(rows, scores):
             raise ValueError("live evidence requires benchmark rows produced by execution")
         if not isinstance(output_sha256, str) or not _SHA256.fullmatch(output_sha256):
             raise ValueError("live evidence requires a valid output_sha256 for every row")
+        prompt_sha256 = row.get("prompt_sha256")
+        if not isinstance(prompt_sha256, str) or not _SHA256.fullmatch(prompt_sha256):
+            raise ValueError("live evidence requires a valid prompt_sha256 for every row")
+        manifest_id = row.get("execution_manifest_id")
+        if not isinstance(manifest_id, str) or not manifest_id:
+            raise ValueError("live evidence requires an execution manifest ID")
+        manifest_ids.add(manifest_id)
+        model_count = row.get("model_count")
+        if not isinstance(model_count, int) or isinstance(model_count, bool) or model_count < 1:
+            raise ValueError("live evidence requires at least one executed model per arm")
+        model_ids = row.get("model_ids")
+        if not isinstance(model_ids, list) or len(model_ids) != model_count or not all(isinstance(model_id, str) and model_id for model_id in model_ids):
+            raise ValueError("live evidence requires the executed model IDs")
+        if row.get("status") not in {"ok", "failed"}:
+            raise ValueError("live evidence contains an invalid execution status")
+        if row.get("route_source") == "fixture":
+            raise ValueError("fixture-backed routes cannot be live evidence")
+        if row.get("arm") == "jev" and row.get("route_source") != "typesafe":
+            raise ValueError("live Jev evidence requires a live TypeSafe route")
+        if not verify_record(row, evidence_key, "evidence_signature"):
+            raise ValueError("execution manifest signature is invalid")
         if key in expected:
             raise ValueError(f"duplicate benchmark row for task {key[0]} arm {key[1]}")
         expected[key] = row
+    if len(manifest_ids) != 1:
+        raise ValueError("live evidence rows must share one execution manifest")
 
     scored = {}
     for score in scores:
@@ -167,12 +199,16 @@ def merge_live_scores(rows, scores):
             raise ValueError(f"duplicate live score for task {key[0]} arm {key[1]}")
         if score.get("output_sha256") != expected[key].get("output_sha256"):
             raise ValueError(f"score hash does not match output for task {key[0]} arm {key[1]}")
+        if not verify_record(score, scorer_key, "score_signature"):
+            raise ValueError("score signature is invalid")
         source = score.get("source")
         if source not in _SCORE_SOURCES:
             raise ValueError("live score source must be human or judge")
         scorer_id = score.get("scorer_id")
         if not isinstance(scorer_id, str) or not scorer_id.strip():
             raise ValueError("live scores require scorer_id")
+        if isinstance(score.get("quality"), bool):
+            raise ValueError("quality must be numeric")
         quality = _as_float(score.get("quality"), "quality")
         if not 0 <= quality <= 1:
             raise ValueError("quality must be between 0 and 1")
@@ -209,7 +245,7 @@ def render_report(result, weights, evidence_class="unverified"):
             f"- Seed: {result['seed']}",
             f"- Bootstrap samples: {result['bootstrap_samples']}",
             "",
-            "A publishable effectiveness claim requires live or explicitly labeled holdout evidence; fixture results validate the evaluator only.",
+            "A publishable effectiveness claim requires signed live execution and scorer evidence; fixture results validate the evaluator only.",
             "",
         ]
     )

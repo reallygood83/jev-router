@@ -2,9 +2,12 @@ import json
 import hashlib
 import random
 import time
+import uuid
 from pathlib import Path
+from typing import cast
 
 from .adapters import execute_plan
+from .evidence import sign_record
 from .jev import JevClient, JevUnavailable, route_task
 
 
@@ -42,12 +45,13 @@ def _fixed_plan(mode, model_ids):
     }
 
 
-def run_benchmark(tasks, models, single_id, team_ids, jev_client, runner=None, seed=0, execute=False, health=None):
+def run_benchmark(tasks, models, single_id, team_ids, jev_client, runner=None, seed=0, execute=False, health=None, health_ttl=3600, evidence_key="", require_fingerprint=True):
     by_id = {model.id: model for model in models}
     if single_id not in by_id or len(team_ids) < 2 or any(model_id not in by_id for model_id in team_ids):
         raise ValueError("benchmark references unknown registered model")
     rows = []
     rng = random.Random(seed)
+    manifest_id = uuid.uuid4().hex if execute else ""
     for task in tasks:
         task_id = task.get("task_id")
         prompt = task.get("prompt")
@@ -60,13 +64,32 @@ def run_benchmark(tasks, models, single_id, team_ids, jev_client, runner=None, s
             "static-team": _fixed_plan("orchestration", team_ids),
         }
         try:
-            plans["jev"] = route_task(prompt, models, jev_client, health=health)
+            plans["jev"] = route_task(
+                prompt,
+                models,
+                jev_client,
+                health=health,
+                health_ttl=health_ttl,
+                require_fingerprint=require_fingerprint,
+            )
         except (JevUnavailable, ValueError) as exc:
             plans["jev"] = {"status": "blocked", "reason": str(exc)}
         for arm in arms:
             plan = plans[arm]
             started = time.perf_counter()
-            result = execute_plan(plan, models, prompt, runner=runner) if execute else {"ok": plan.get("status") == "ok", "results": [], "model_count": 0}
+            result = (
+                execute_plan(
+                    plan,
+                    models,
+                    prompt,
+                    runner=runner,
+                    health=health,
+                    health_ttl=health_ttl,
+                    require_fingerprint=require_fingerprint,
+                )
+                if execute
+                else {"ok": plan.get("status") == "ok", "results": [], "model_count": 0}
+            )
             elapsed = round((time.perf_counter() - started) * 1000, 2)
             if execute:
                 quality = 0.0
@@ -78,25 +101,33 @@ def run_benchmark(tasks, models, single_id, team_ids, jev_client, runner=None, s
             overhead = float(str(raw_overhead)) if isinstance(raw_overhead, (int, float, str)) else 0.0
             output = result.get("output", "") or ""
             output_sha256 = hashlib.sha256(str(output).encode("utf-8")).hexdigest()
-            rows.append(
-                {
-                    "task_id": task_id,
-                    "split": task.get("split", "holdout"),
-                    "arm": arm,
-                    "quality": quality,
-                    "cost": _cost(models, result, prompt) if execute else 0.0,
-                    "time_ms": elapsed,
-                    "failure_cost": 0.0 if result.get("ok") else 1.0,
-                    "overhead": overhead / 1000,
-                    "model_count": result.get("model_count", 0),
-                    "status": "ok" if result.get("ok") else "failed",
-                    "route_source": plan.get("source", arm),
-                    "evidence_class": "runtime_unscored" if execute else "fixture",
-                    "executed": bool(execute),
-                    "quality_source": "pending" if execute else "fixture",
-                    "output_sha256": output_sha256,
-                }
-            )
+            executed_model_ids = [item.get("model_id") for item in cast(list[dict[str, object]], result.get("results", []))]
+            row = {
+                "task_id": task_id,
+                "split": task.get("split", "holdout"),
+                "arm": arm,
+                "quality": quality,
+                "cost": _cost(models, result, prompt) if execute else 0.0,
+                "time_ms": elapsed,
+                "failure_cost": 0.0 if result.get("ok") else 1.0,
+                "overhead": overhead / 1000,
+                "model_count": result.get("model_count", 0),
+                "model_ids": (
+                    executed_model_ids if execute else list(plan.get("worker_ids", []))
+                ),
+                "status": "ok" if result.get("ok") else "failed",
+                "route_source": plan.get("source", arm),
+                "evidence_class": "runtime_unscored" if execute else "fixture",
+                "executed": bool(execute),
+                "quality_source": "pending" if execute else "fixture",
+                "output_sha256": output_sha256,
+                "prompt_sha256": hashlib.sha256(str(prompt).encode("utf-8")).hexdigest(),
+            }
+            if execute:
+                row["execution_manifest_id"] = manifest_id
+                if evidence_key:
+                    row["evidence_signature"] = sign_record(row, evidence_key, "evidence_signature")
+            rows.append(row)
     return rows
 
 

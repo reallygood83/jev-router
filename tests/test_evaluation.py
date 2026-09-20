@@ -3,6 +3,7 @@ import unittest
 from typing import cast
 
 from jev_router.evaluation import evaluate_rows, merge_live_scores
+from jev_router.evidence import sign_record
 
 
 class EvaluationTests(unittest.TestCase):
@@ -50,7 +51,15 @@ class EvaluationTests(unittest.TestCase):
             "evidence_class": "runtime_unscored",
             "executed": True,
             "output_sha256": output_sha256,
+            "prompt_sha256": hashlib.sha256(b"prompt").hexdigest(),
+            "execution_manifest_id": "manifest-1",
+            "model_count": 1,
+            "model_ids": ["model-1"],
+            "status": "ok",
+            "route_source": "single",
+            "quality": 0.0,
         }]
+        rows[0]["evidence_signature"] = sign_record(rows[0], "evidence-key", "evidence_signature")
         scores = [{
             "task_id": "a",
             "arm": "single",
@@ -59,13 +68,14 @@ class EvaluationTests(unittest.TestCase):
             "source": "human",
             "scorer_id": "reviewer-01",
         }]
+        scores[0]["score_signature"] = sign_record(scores[0], "score-key", "score_signature")
 
-        merged = merge_live_scores(rows, scores)
+        merged = merge_live_scores(rows, scores, evidence_key="evidence-key", scorer_key="score-key")
 
         self.assertEqual(merged[0]["quality"], 0.8)
         self.assertEqual(merged[0]["evidence_class"], "live")
         with self.assertRaises(ValueError):
-            merge_live_scores(rows, [dict(scores[0], output_sha256="0" * 64)])
+            merge_live_scores(rows, [dict(scores[0], output_sha256="0" * 64)], evidence_key="evidence-key", scorer_key="score-key")
 
 
 if __name__ == "__main__":

@@ -1,11 +1,14 @@
+test_execute_plan_rejects_unapproved_model (test_adapters.AdapterTests) ... ok
 test_execute_plan_uses_captain_after_parallel_workers (test_adapters.AdapterTests) ... ok
 test_prompt_command_keeps_provider_arguments (test_adapters.AdapterTests) ... ok
+test_provider_subprocess_does_not_inherit_router_secrets (test_adapters.AdapterTests) ... ok
 test_execution_never_imports_task_quality_as_live_evidence (test_benchmark.BenchmarkTests) ... ok
 test_dry_run_returns_only_approved_healthy_candidates (test_cli.CliTests) ... ok
 test_explicit_static_team_keeps_all_configured_models (test_cli.CliTests) ... ok
 test_fake_now_health_is_not_fresh_without_fixture_label (test_cli.CliTests) ... ok
 test_fixture_cannot_be_labeled_live (test_cli.CliTests) ... ok
 test_fixture_effectiveness_is_not_publishable (test_cli.CliTests) ... ok
+test_forged_runtime_rows_cannot_be_published (test_cli.CliTests) ... ok
 test_live_evidence_requires_external_hash_bound_scores (test_cli.CliTests) ... ok
 test_malformed_evaluation_input_returns_json_error (test_cli.CliTests) ... ok
 test_orchestration_with_one_model_is_blocked (test_cli.CliTests) ... ok
@@ -18,6 +21,7 @@ test_missing_static_team_is_insufficient_evidence (test_evaluation.EvaluationTes
 test_paired_report_is_deterministic_and_correct (test_evaluation.EvaluationTests) ... ok
 test_live_score_is_bound_to_executed_output_hash (test_evaluation.EvaluationTests) ... ok
 test_failed_or_stale_models_are_excluded (test_health.HealthTests) ... ok
+test_mismatched_model_fingerprint_is_excluded_when_required (test_health.HealthTests) ... ok
 test_missing_or_future_health_timestamp_is_excluded (test_health.HealthTests) ... ok
 test_non_boolean_health_success_is_excluded (test_health.HealthTests) ... ok
 test_command_mapping_keeps_model_arguments (test_health_probe.HealthProbeTests) ... ok
@@ -39,6 +43,6 @@ test_unapproved_models_are_excluded (test_registry.RegistryTests) ... ok
 test_registry_round_trip_preserves_approval_and_metadata (test_registry_storage.RegistryStorageTests) ... ok
 
 ----------------------------------------------------------------------
-Ran 39 tests in 0.006s
+Ran 43 tests in 0.015s
 
 OK

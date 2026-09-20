@@ -1,12 +1,15 @@
 import contextlib
 import io
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from jev_router.cli import _health, _static_plan, main
 from jev_router.evaluation import merge_live_scores
+from jev_router.evidence import sign_record
 from jev_router.registry import eligible_models
 from jev_router.registry import ModelSpec
 
@@ -85,6 +88,52 @@ class CliTests(unittest.TestCase):
         rows = [{"task_id": "a", "arm": "single", "evidence_class": "live", "executed": True, "quality_source": "human", "quality": 1.0}]
         with self.assertRaises(ValueError):
             merge_live_scores(rows, [])
+
+    def test_forged_runtime_rows_cannot_be_published(self):
+        row = {
+            "task_id": "a",
+            "arm": "single",
+            "evidence_class": "runtime_unscored",
+            "executed": True,
+            "output_sha256": "0" * 64,
+            "prompt_sha256": "1" * 64,
+            "execution_manifest_id": "forged",
+            "model_count": 0,
+            "status": "failed",
+            "route_source": "single",
+            "quality": 0.0,
+        }
+        score = {
+            "task_id": "a",
+            "arm": "single",
+            "output_sha256": row["output_sha256"],
+            "quality": 1.0,
+            "source": "human",
+            "scorer_id": "forger",
+        }
+        score["score_signature"] = sign_record(score, "scorer", "score_signature")
+        with tempfile.TemporaryDirectory() as directory:
+            input_path = Path(directory) / "benchmark.jsonl"
+            score_path = Path(directory) / "scores.jsonl"
+            input_path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+            score_path.write_text(json.dumps(score) + "\n", encoding="utf-8")
+            output = io.StringIO()
+            with patch.dict(os.environ, {"JEV_EVIDENCE_KEY": "evidence", "JEV_SCORER_KEY": "scorer"}, clear=False):
+                with contextlib.redirect_stdout(output):
+                    code = main([
+                        "evaluate",
+                        "--input",
+                        str(input_path),
+                        "--weights",
+                        "config/weights.toml",
+                        "--scores",
+                        str(score_path),
+                        "--evidence-class",
+                        "live",
+                    ])
+        payload = json.loads(output.getvalue())
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["verdict"], "blocked")
 
     def test_malformed_evaluation_input_returns_json_error(self):
         with tempfile.TemporaryDirectory() as directory:

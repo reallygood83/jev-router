@@ -51,6 +51,19 @@ class HealthTests(unittest.TestCase):
 
         self.assertEqual(eligible, [])
 
+    def test_mismatched_model_fingerprint_is_excluded_when_required(self):
+        now = datetime.now(timezone.utc)
+        model = ModelSpec(id="model", provider="codex", model="sol", approved=True)
+
+        eligible = eligible_models(
+            [model],
+            {"model": {"ok": True, "checked_at": now.isoformat(), "model_fingerprint": "0" * 64}},
+            now=now,
+            require_fingerprint=True,
+        )
+
+        self.assertEqual(eligible, [])
+
 
 if __name__ == "__main__":
     unittest.main()

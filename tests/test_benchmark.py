@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from jev_router.benchmark import run_benchmark
 from jev_router.jev import JevClient
-from jev_router.registry import ModelSpec
+from jev_router.registry import ModelSpec, model_fingerprint
 
 
 class BenchmarkTests(unittest.TestCase):
@@ -21,7 +21,15 @@ class BenchmarkTests(unittest.TestCase):
             client,
             runner=lambda *args, **kwargs: (0, "answer", ""),
             execute=True,
-            health={model.id: {"ok": True, "checked_at": datetime.now(timezone.utc).isoformat()} for model in models},
+            health={
+                model.id: {
+                    "ok": True,
+                    "checked_at": datetime.now(timezone.utc).isoformat(),
+                    "model_fingerprint": model_fingerprint(model),
+                }
+                for model in models
+            },
+            evidence_key="evidence-key",
         )
 
         self.assertEqual(len(rows), 3)
@@ -30,6 +38,8 @@ class BenchmarkTests(unittest.TestCase):
         self.assertTrue(all(row["quality_source"] == "pending" for row in rows))
         self.assertTrue(all(row["quality"] == 0.0 for row in rows))
         self.assertTrue(all(len(row["output_sha256"]) == 64 for row in rows))
+        self.assertTrue(all(len(row["evidence_signature"]) == 64 for row in rows))
+        self.assertTrue(all(row["model_count"] == len(row["model_ids"]) for row in rows))
 
 
 if __name__ == "__main__":

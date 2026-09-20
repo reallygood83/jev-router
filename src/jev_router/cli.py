@@ -1,6 +1,7 @@
 import argparse
 import hashlib
 import json
+import os
 import sys
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -210,7 +211,9 @@ def cmd_route(args, parts):
         return 2
     config = load_config(args.config)
     models = validate_registry(models_from_config(config))
-    candidates = eligible_models(models, _health(config), ttl_seconds=args.health_ttl)
+    health = _health(config)
+    require_fingerprint = config.get("evidence_class") != "fixture"
+    candidates = eligible_models(models, health, ttl_seconds=args.health_ttl, require_fingerprint=require_fingerprint)
     gate = _strategy_gate(config)
     plan: dict[str, Any]
     if not candidates:
@@ -243,8 +246,9 @@ def cmd_route(args, parts):
                 client,
                 cwd=str(Path.cwd()),
                 threshold=float(jev.get("orchestrator_threshold", 0.6)),
-                health=_health(config),
+                health=health,
                 health_ttl=args.health_ttl,
+                require_fingerprint=require_fingerprint,
             )
         except (JevUnavailable, ValueError) as exc:
             plan = {"status": "blocked", "reason": str(exc), "source": "jev"}
@@ -252,7 +256,15 @@ def cmd_route(args, parts):
             plan["strategy_gate"] = gate
     output = _base_output(task, plan)
     if args.execute and plan.get("status") == "ok":
-        output["execution"] = execute_plan(plan, models, task, timeout_seconds=args.timeout)
+        output["execution"] = execute_plan(
+            plan,
+            models,
+            task,
+            timeout_seconds=args.timeout,
+            health=health,
+            health_ttl=args.health_ttl,
+            require_fingerprint=require_fingerprint,
+        )
     if args.json or args.dry_run or not args.execute:
         print(json.dumps(output, ensure_ascii=False, indent=2))
     else:
@@ -267,7 +279,12 @@ def cmd_evaluate(args):
         if args.evidence_class == "live":
             if not args.scores:
                 raise ValueError("live evidence requires --scores with external output-bound scores")
-            rows = merge_live_scores(rows, load_jsonl(args.scores))
+            rows = merge_live_scores(
+                rows,
+                load_jsonl(args.scores),
+                evidence_key=os.environ.get("JEV_EVIDENCE_KEY", ""),
+                scorer_key=os.environ.get("JEV_SCORER_KEY", ""),
+            )
         weights = load_weights(args.weights)
         result = evaluate_rows(rows, weights, seed=args.seed, bootstrap_samples=args.bootstrap_samples)
     except (OSError, ValueError) as exc:
@@ -290,7 +307,9 @@ def cmd_evaluate(args):
 def cmd_benchmark(args):
     config = load_config(args.config)
     models = validate_registry(models_from_config(config))
-    candidates = eligible_models(models, _health(config), ttl_seconds=args.health_ttl)
+    health = _health(config)
+    require_fingerprint = config.get("evidence_class") != "fixture"
+    candidates = eligible_models(models, health, ttl_seconds=args.health_ttl, require_fingerprint=require_fingerprint)
     if not candidates:
         print(json.dumps({"status": "blocked", "reason": "no approved healthy models"}, ensure_ascii=False))
         return 1
@@ -312,7 +331,10 @@ def cmd_benchmark(args):
             client,
             seed=args.seed,
             execute=args.execute,
-            health=_health(config),
+            health=health,
+            health_ttl=args.health_ttl,
+            evidence_key=os.environ.get("JEV_EVIDENCE_KEY", ""),
+            require_fingerprint=require_fingerprint,
         )
     except (OSError, ValueError, JevUnavailable) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)}, ensure_ascii=False))

@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping, Optional
+import hashlib
 import json
 import math
 import os
@@ -47,6 +48,7 @@ def eligible_models(
     health: Mapping[str, Mapping[str, Any]],
     now: Optional[datetime] = None,
     ttl_seconds: int = 3600,
+    require_fingerprint: bool = False,
 ) -> list[ModelSpec]:
     if ttl_seconds < 0:
         raise ValueError("ttl_seconds must be non-negative")
@@ -59,6 +61,8 @@ def eligible_models(
             continue
         result = health.get(model.id)
         if not result or result.get("ok") is not True:
+            continue
+        if require_fingerprint and result.get("model_fingerprint") != model_fingerprint(model):
             continue
         checked_at = result.get("checked_at")
         if checked_at is None:
@@ -74,6 +78,18 @@ def eligible_models(
             continue
         eligible.append(model)
     return eligible
+
+
+def model_fingerprint(model: ModelSpec) -> str:
+    payload = {
+        "id": model.id,
+        "provider": model.provider,
+        "model": model.model,
+        "kind": model.kind,
+        "argv": list(model.argv),
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def validate_registry(models: Iterable[ModelSpec]) -> list[ModelSpec]:
