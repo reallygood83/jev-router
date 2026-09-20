@@ -42,7 +42,7 @@ def _fixed_plan(mode, model_ids):
     }
 
 
-def run_benchmark(tasks, models, single_id, team_ids, jev_client, runner=None, seed=0, execute=False):
+def run_benchmark(tasks, models, single_id, team_ids, jev_client, runner=None, seed=0, execute=False, health=None):
     by_id = {model.id: model for model in models}
     if single_id not in by_id or len(team_ids) < 2 or any(model_id not in by_id for model_id in team_ids):
         raise ValueError("benchmark references unknown registered model")
@@ -60,7 +60,7 @@ def run_benchmark(tasks, models, single_id, team_ids, jev_client, runner=None, s
             "static-team": _fixed_plan("orchestration", team_ids),
         }
         try:
-            plans["jev"] = route_task(prompt, models, jev_client)
+            plans["jev"] = route_task(prompt, models, jev_client, health=health)
         except (JevUnavailable, ValueError) as exc:
             plans["jev"] = {"status": "blocked", "reason": str(exc)}
         for arm in arms:

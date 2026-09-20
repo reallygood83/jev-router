@@ -64,6 +64,23 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(payload["verdict"], "blocked")
 
+    def test_fixture_effectiveness_is_not_publishable(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = main([
+                "evaluate",
+                "--input",
+                "artifacts/benchmark.jsonl",
+                "--weights",
+                "config/weights.toml",
+                "--evidence-class",
+                "fixture",
+            ])
+        payload = json.loads(output.getvalue())
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["verdict"], "effective")
+        self.assertFalse(payload["publishable"])
+
     def test_live_evidence_requires_external_hash_bound_scores(self):
         rows = [{"task_id": "a", "arm": "single", "evidence_class": "live", "executed": True, "quality_source": "human", "quality": 1.0}]
         with self.assertRaises(ValueError):

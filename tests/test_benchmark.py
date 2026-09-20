@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timezone
 
 from jev_router.benchmark import run_benchmark
 from jev_router.jev import JevClient
@@ -20,6 +21,7 @@ class BenchmarkTests(unittest.TestCase):
             client,
             runner=lambda *args, **kwargs: (0, "answer", ""),
             execute=True,
+            health={model.id: {"ok": True, "checked_at": datetime.now(timezone.utc).isoformat()} for model in models},
         )
 
         self.assertEqual(len(rows), 3)

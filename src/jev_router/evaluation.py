@@ -200,6 +200,7 @@ def render_report(result, weights, evidence_class="unverified"):
             "",
             f"- Evidence class: {evidence_class}",
             f"- Verdict: {verdict}",
+            f"- Publishable: {'yes' if evidence_class == 'live' and verdict == 'effective' else 'no'}",
             f"- Paired holdout tasks: {result['pairs']}",
             f"- Incomplete tasks: {len(result.get('incomplete_tasks', []))}",
             f"- Mean utility delta (Jev - best baseline): {result['delta_mean']:.6f}",

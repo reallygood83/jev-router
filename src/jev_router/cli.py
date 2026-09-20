@@ -237,7 +237,15 @@ def cmd_route(args, parts):
                 model=jev.get("model", "jev-latest"),
                 response_file=response_file,
             )
-            plan = route_task(task, candidates, client, cwd=str(Path.cwd()), threshold=float(jev.get("orchestrator_threshold", 0.6)))
+            plan = route_task(
+                task,
+                candidates,
+                client,
+                cwd=str(Path.cwd()),
+                threshold=float(jev.get("orchestrator_threshold", 0.6)),
+                health=_health(config),
+                health_ttl=args.health_ttl,
+            )
         except (JevUnavailable, ValueError) as exc:
             plan = {"status": "blocked", "reason": str(exc), "source": "jev"}
         if gate:
@@ -265,6 +273,8 @@ def cmd_evaluate(args):
     except (OSError, ValueError) as exc:
         print(json.dumps({"verdict": "blocked", "reason": str(exc)}, ensure_ascii=False))
         return 2
+    publishable = args.evidence_class == "live" and result["verdict"] == "effective"
+    result["publishable"] = publishable
     report = render_report(result, weights, args.evidence_class)
     if args.output:
         Path(args.output).parent.mkdir(parents=True, exist_ok=True)
@@ -272,7 +282,9 @@ def cmd_evaluate(args):
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if args.output:
         print(f"report: {args.output}")
-    return 0 if result["verdict"] == "effective" else 1
+    if publishable:
+        return 0
+    return 2 if result["verdict"] == "effective" else 1
 
 
 def cmd_benchmark(args):
@@ -292,7 +304,16 @@ def cmd_benchmark(args):
             response_file=_optional_path(args.response_file or jev.get("response_file"), args.config),
         )
         tasks = load_jsonl(args.tasks)
-        rows = run_benchmark(tasks, candidates, single_id, team_ids, client, seed=args.seed, execute=args.execute)
+        rows = run_benchmark(
+            tasks,
+            candidates,
+            single_id,
+            team_ids,
+            client,
+            seed=args.seed,
+            execute=args.execute,
+            health=_health(config),
+        )
     except (OSError, ValueError, JevUnavailable) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)}, ensure_ascii=False))
         return 2

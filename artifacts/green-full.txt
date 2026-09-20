@@ -5,6 +5,7 @@ test_dry_run_returns_only_approved_healthy_candidates (test_cli.CliTests) ... ok
 test_explicit_static_team_keeps_all_configured_models (test_cli.CliTests) ... ok
 test_fake_now_health_is_not_fresh_without_fixture_label (test_cli.CliTests) ... ok
 test_fixture_cannot_be_labeled_live (test_cli.CliTests) ... ok
+test_fixture_effectiveness_is_not_publishable (test_cli.CliTests) ... ok
 test_live_evidence_requires_external_hash_bound_scores (test_cli.CliTests) ... ok
 test_malformed_evaluation_input_returns_json_error (test_cli.CliTests) ... ok
 test_orchestration_with_one_model_is_blocked (test_cli.CliTests) ... ok
@@ -26,6 +27,7 @@ test_jev_cannot_select_outside_candidate_set (test_jev.JevTests) ... ok
 test_custom_type_safe_endpoint_is_rejected (test_jev.JevTests) ... ok
 test_jev_decision_selects_captain_and_workers (test_jev.JevTests) ... ok
 test_jev_orchestration_requires_two_models (test_jev.JevTests) ... ok
+test_route_requires_health_evidence (test_jev.JevTests) ... ok
 test_payload_is_limited_to_approved_healthy_candidates (test_jev.JevTests) ... ok
 test_non_finite_confidence_is_rejected (test_policy.PolicyTests) ... ok
 test_orchestration_is_selected_when_lower_bound_beats_baseline (test_policy.PolicyTests) ... ok
@@ -37,6 +39,6 @@ test_unapproved_models_are_excluded (test_registry.RegistryTests) ... ok
 test_registry_round_trip_preserves_approval_and_metadata (test_registry_storage.RegistryStorageTests) ... ok
 
 ----------------------------------------------------------------------
-Ran 37 tests in 0.006s
+Ran 39 tests in 0.006s
 
 OK

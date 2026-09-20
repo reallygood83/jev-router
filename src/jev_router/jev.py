@@ -6,7 +6,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from .registry import ModelSpec
+from .registry import ModelSpec, eligible_models
 
 
 DEFAULT_ENDPOINT = "https://api.typesafe.ai/v1/systemone"
@@ -46,8 +46,10 @@ def _approved_candidates(candidates):
     return [model for model in candidates if model.approved and model.enabled]
 
 
-def build_payload(task, candidates, cwd=""):
-    candidates = _approved_candidates(candidates)
+def build_payload(task, candidates, cwd="", health=None, health_ttl=3600):
+    if health is None:
+        raise ValueError("Jev payload requires fresh health evidence")
+    candidates = eligible_models(_approved_candidates(candidates), health, ttl_seconds=health_ttl)
     rows = [_candidate_dict(model) for model in candidates]
     criteria = {model.id: model.when or model.purpose or model.model for model in candidates}
     return {
@@ -183,11 +185,13 @@ def parse_decision(response, candidates, threshold=0.6):
     }
 
 
-def route_task(task, candidates, client, cwd="", threshold=0.6):
-    candidates = _approved_candidates(candidates)
+def route_task(task, candidates, client, cwd="", threshold=0.6, health=None, health_ttl=3600):
+    if health is None:
+        return {"status": "blocked", "reason": "Jev routing requires fresh health evidence"}
+    candidates = eligible_models(_approved_candidates(candidates), health, ttl_seconds=health_ttl)
     if not candidates:
         return {"status": "blocked", "reason": "no approved healthy models"}
-    payload = build_payload(task, candidates, cwd)
+    payload = build_payload(task, candidates, cwd, health=health, health_ttl=health_ttl)
     response, source, latency_ms = client.ask(payload)
     decision = parse_decision(response, candidates, threshold)
     return {
