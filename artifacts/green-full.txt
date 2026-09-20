@@ -5,6 +5,7 @@ test_provider_subprocess_does_not_inherit_router_secrets (test_adapters.AdapterT
 test_execution_never_imports_task_quality_as_live_evidence (test_benchmark.BenchmarkTests) ... ok
 test_dry_run_returns_only_approved_healthy_candidates (test_cli.CliTests) ... ok
 test_explicit_static_team_keeps_all_configured_models (test_cli.CliTests) ... ok
+test_failed_live_benchmark_keeps_runtime_rows_for_diagnosis (test_cli.CliTests) ... ok
 test_fake_now_health_is_not_fresh_without_fixture_label (test_cli.CliTests) ... ok
 test_fixture_cannot_be_labeled_live (test_cli.CliTests) ... ok
 test_fixture_effectiveness_is_not_publishable (test_cli.CliTests) ... ok
@@ -45,6 +46,6 @@ test_unapproved_models_are_excluded (test_registry.RegistryTests) ... ok
 test_registry_round_trip_preserves_approval_and_metadata (test_registry_storage.RegistryStorageTests) ... ok
 
 ----------------------------------------------------------------------
-Ran 45 tests in 0.025s
+Ran 46 tests in 0.024s
 
 OK

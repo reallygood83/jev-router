@@ -350,6 +350,7 @@ def cmd_benchmark(args):
             require_fingerprint=require_fingerprint,
             evidence_class=config.get("evidence_class", "live"),
         )
+        save_jsonl(args.benchmark_output, rows)
         manifest_path = None
         if args.execute:
             manifest_path = args.manifest_output
@@ -364,7 +365,6 @@ def cmd_benchmark(args):
     except (OSError, ValueError, JevUnavailable) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)}, ensure_ascii=False))
         return 2
-    save_jsonl(args.benchmark_output, rows)
     payload = {"status": "completed", "rows": len(rows), "output": args.benchmark_output, "executed": args.execute}
     if manifest_path:
         payload["manifest"] = manifest_path

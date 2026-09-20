@@ -165,9 +165,18 @@ def build_manifest(rows, evidence_key="", evidence_class="live"):
         raise ValueError("execution rows require a manifest ID")
     records = []
     arms_by_task = {}
+    seen_keys = set()
     for row in rows:
         if row.get("execution_manifest_id") != manifest_id:
             raise ValueError("execution rows must share one manifest ID")
+        task_id = row.get("task_id")
+        arm = row.get("arm")
+        if not isinstance(task_id, str) or not isinstance(arm, str):
+            raise ValueError("execution manifest row key is invalid")
+        key = (task_id, arm)
+        if key in seen_keys:
+            raise ValueError("execution manifest contains duplicate task/arm rows")
+        seen_keys.add(key)
         if evidence_class == "live":
             if row.get("evidence_class") != "runtime_unscored" or row.get("executed") is not True:
                 raise ValueError("live execution manifest contains a non-executed row")
@@ -175,10 +184,6 @@ def build_manifest(rows, evidence_key="", evidence_class="live"):
                 raise ValueError("live execution manifest requires successful non-empty rows")
             if not verify_record(row, evidence_key, "evidence_signature"):
                 raise ValueError("live execution row signature is invalid")
-        task_id = row.get("task_id")
-        arm = row.get("arm")
-        if not isinstance(task_id, str) or not isinstance(arm, str):
-            raise ValueError("execution manifest row key is invalid")
         arms_by_task.setdefault(task_id, set()).add(arm)
         records.append(
             {

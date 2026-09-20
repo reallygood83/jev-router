@@ -52,6 +52,9 @@ class BenchmarkTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_manifest([failed_row] + rows[1:], evidence_key="evidence-key", evidence_class="live")
 
+        with self.assertRaises(ValueError):
+            build_manifest(rows + [rows[0]], evidence_key="evidence-key", evidence_class="live")
+
 
 if __name__ == "__main__":
     unittest.main()

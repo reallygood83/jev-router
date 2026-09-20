@@ -50,6 +50,27 @@ class CliTests(unittest.TestCase):
         model = ModelSpec(id="same", provider="codex", model="same", approved=True)
         self.assertEqual(_static_plan([model], "orchestration", ["same", "same"])["status"], "blocked")
 
+    def test_failed_live_benchmark_keeps_runtime_rows_for_diagnosis(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_path = Path(directory) / "benchmark.jsonl"
+            output = io.StringIO()
+            with patch("jev_router.cli.run_benchmark", return_value=[{"task_id": "a", "arm": "single"}]), patch(
+                "jev_router.cli.build_manifest", side_effect=ValueError("incomplete live manifest")
+            ), contextlib.redirect_stdout(output):
+                code = main([
+                    "benchmark",
+                    "--config",
+                    "tests/fixtures/config.json",
+                    "--tasks",
+                    "tests/fixtures/tasks.jsonl",
+                    "--execute",
+                    "--benchmark-output",
+                    str(output_path),
+                ])
+            self.assertEqual(code, 2)
+            self.assertEqual(json.loads(output.getvalue())["status"], "blocked")
+            self.assertEqual(json.loads(output_path.read_text(encoding="utf-8"))["task_id"], "a")
+
     def test_fake_now_health_is_not_fresh_without_fixture_label(self):
         model = ModelSpec(id="live", provider="codex", model="sol", approved=True)
         config = {"health": {"live": {"ok": True, "checked_at": "now"}}}
