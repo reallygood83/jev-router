@@ -8,11 +8,18 @@ class GateHttpTests(unittest.TestCase):
     def test_handler_speaks_http_11(self):
         self.assertEqual(GateHandler.protocol_version, "HTTP/1.1")
 
-    def test_get_responses_is_treated_as_websocket(self):
+    def test_plain_get_responses_is_not_websocket(self):
         handler = GateHandler.__new__(GateHandler)
         handler.command = "GET"
         handler.path = "/v1/responses"
         handler.headers = {}
+        self.assertFalse(handler._wants_websocket("/v1/responses"))
+
+    def test_sec_websocket_key_is_websocket(self):
+        handler = GateHandler.__new__(GateHandler)
+        handler.command = "GET"
+        handler.path = "/v1/responses"
+        handler.headers = {"Sec-WebSocket-Key": "abc"}
         self.assertTrue(handler._wants_websocket("/v1/responses"))
 
     def test_chunked_request_body_is_decoded(self):

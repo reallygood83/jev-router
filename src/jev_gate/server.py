@@ -345,11 +345,32 @@ class GateHandler(BaseHTTPRequestHandler):
         return self.rfile.read(length) if length else b""
 
     def _wants_websocket(self, path=None):
-        path = path or self._route()
-        upgrade = (self.headers.get("Upgrade") or "").lower()
-        if "websocket" in upgrade:
+        del path
+        if self.headers.get("Sec-WebSocket-Key"):
             return True
-        return self.command == "GET" and path.rstrip("/") == "/v1/responses"
+        upgrade = (self.headers.get("Upgrade") or "").lower()
+        return "websocket" in upgrade
+
+    def _rewrite_client_ws(self, data, buf):
+        buf.extend(data)
+        out = b""
+        while True:
+            frame, rest = pop_frame(buf)
+            if frame is None:
+                break
+            buf[:] = rest
+            if frame["opcode"] == 1 and frame["fin"]:
+                def rewriter(body):
+                    encoded, _decision = self._classify_and_patch(json.dumps(body).encode("utf-8"))
+                    try:
+                        return json.loads(encoded.decode("utf-8"))
+                    except Exception:
+                        return body
+                payload = rewrite_model_payload(frame["payload"], rewriter)
+                out += encode_frame(1, payload, masked=True, fin=True)
+            else:
+                out += frame["original"]
+        return out
 
     def _websocket_tunnel(self):
         upstream = socket.create_connection(
@@ -359,17 +380,10 @@ class GateHandler(BaseHTTPRequestHandler):
         lines = [f"{self.command} {self.path} HTTP/1.1"]
         host = f"{self.state.upstream_host}:{self.state.upstream_port}"
         lines.append(f"Host: {host}")
-        seen_upgrade = False
         for key, value in self.headers.items():
-            lower = str(key).lower()
-            if lower == "host":
+            if str(key).lower() == "host":
                 continue
-            if lower == "upgrade":
-                seen_upgrade = True
             lines.append(f"{key}: {value}")
-        if not seen_upgrade and self._route().rstrip("/") == "/v1/responses":
-            lines.append("Upgrade: websocket")
-            lines.append("Connection: Upgrade")
         upstream.sendall(("\r\n".join(lines) + "\r\n\r\n").encode("iso-8859-1"))
         leftover = b""
         try:
@@ -380,15 +394,17 @@ class GateHandler(BaseHTTPRequestHandler):
                     buf.clear()
         except Exception:
             leftover = b""
+        client_buf = bytearray()
         if leftover:
-            upstream.sendall(leftover)
-        self.state.record({"status": "ws-pass", "role": "-", "confidence": 0, "model_in": "", "model_out": ""})
+            rewritten = self._rewrite_client_ws(leftover, client_buf)
+            if rewritten:
+                upstream.sendall(rewritten)
         print("[jev-gate] websocket", self.command, self.path)
         client = self.connection
         sockets = [client, upstream]
         try:
             while True:
-                readable, _, failed = select.select(sockets, [], sockets, 300)
+                readable, _, failed = select.select(sockets, [], sockets, 600)
                 if failed:
                     break
                 if not readable:
@@ -397,8 +413,12 @@ class GateHandler(BaseHTTPRequestHandler):
                     data = sock.recv(65536)
                     if not data:
                         return
-                    dest = upstream if sock is client else client
-                    dest.sendall(data)
+                    if sock is client:
+                        data = self._rewrite_client_ws(data, client_buf)
+                        if data:
+                            upstream.sendall(data)
+                    else:
+                        client.sendall(data)
         finally:
             try:
                 upstream.close()
@@ -478,6 +498,22 @@ def make_server(host="127.0.0.1", port=10101, upstream="http://127.0.0.1:10100",
 
     class ReuseServer(ThreadingHTTPServer):
         allow_reuse_address = True
+
+    httpd = ReuseServer((host, port), BoundHandler)
+    return httpd, state
+ream=upstream, pack_path=pack_path)
+
+    class BoundHandler(GateHandler):
+        pass
+
+    BoundHandler.state = state
+
+    class ReuseServer(ThreadingHTTPServer):
+        allow_reuse_address = True
+
+    httpd = ReuseServer((host, port), BoundHandler)
+    return httpd, state
+rue
 
     httpd = ReuseServer((host, port), BoundHandler)
     return httpd, state
