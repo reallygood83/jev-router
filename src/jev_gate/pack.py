@@ -2,6 +2,8 @@ import json
 import os
 from pathlib import Path
 
+from .paths import config_dir
+
 
 EFFORTS = ("", "low", "medium", "high", "xhigh", "max", "ultra")
 DEFAULT_ROLES = {
@@ -24,7 +26,7 @@ DEFAULT_ROLES = {
 
 
 def default_pack_path():
-    return Path.home() / ".config" / "jev-gate" / "pack.json"
+    return config_dir() / "pack.json"
 
 
 def empty_pack():

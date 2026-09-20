@@ -243,7 +243,10 @@ class GateHandler(BaseHTTPRequestHandler):
             return self._json(400, {"error": "invalid json"})
         if not isinstance(payload, dict):
             return self._json(400, {"error": "invalid json"})
-        save_key(payload.get("typesafe_api_key"), clear=bool(payload.get("clear")))
+        try:
+            save_key(payload.get("typesafe_api_key"), clear=bool(payload.get("clear")))
+        except OSError as exc:
+            return self._json(500, {"error": str(exc), "jev_key_set": False})
         return self._json(200, {"jev_key_set": key_is_set()})
 
     def _install(self):
@@ -334,5 +337,9 @@ def make_server(host="127.0.0.1", port=10101, upstream="http://127.0.0.1:10100",
         pass
 
     BoundHandler.state = state
-    httpd = ThreadingHTTPServer((host, port), BoundHandler)
+
+    class ReuseServer(ThreadingHTTPServer):
+        allow_reuse_address = True
+
+    httpd = ReuseServer((host, port), BoundHandler)
     return httpd, state

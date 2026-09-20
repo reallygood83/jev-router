@@ -2,9 +2,11 @@ import json
 import os
 from pathlib import Path
 
+from .paths import config_dir
+
 
 def default_secrets_path():
-    return Path.home() / ".config" / "jev-gate" / "secrets.json"
+    return config_dir() / "secrets.json"
 
 
 def _read(path):
