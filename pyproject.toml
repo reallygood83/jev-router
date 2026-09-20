@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jev-router"
-version = "0.1.1"
-description = "A thin Jev router for approved, healthy local AI models"
+version = "0.2.0"
+description = "Classify a task with TypeSafe Jev, then run a local model selected by your routing table"
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}

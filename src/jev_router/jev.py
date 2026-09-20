@@ -6,19 +6,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from .registry import ModelSpec, eligible_models, rank_models
+from .registry import eligible_models
+from .routing import INTENTS, apply_lookup
 
 
 DEFAULT_ENDPOINT = "https://api.typesafe.ai/v1/systemone"
-MAX_CANDIDATES = 8
-DEFAULT_THRESHOLD = 0.75
-
-
-def _cap_candidates(candidates):
-    candidates = list(candidates)
-    if len(candidates) <= MAX_CANDIDATES:
-        return candidates
-    return rank_models(candidates, limit=MAX_CANDIDATES)
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -35,65 +27,45 @@ class JevUnavailable(RuntimeError):
     pass
 
 
-def _candidate_dict(model):
-    return {
-        "id": model.id,
-        "provider": model.provider,
-        "model": model.model,
-        "kind": model.kind,
-        "purpose": model.purpose,
-        "when": model.when,
-        "context_tokens": model.context_tokens,
-        "quality_prior": model.quality_prior,
-        "latency_prior_ms": model.latency_prior_ms,
-        "input_cost_per_1k": model.input_cost_per_1k,
-        "output_cost_per_1k": model.output_cost_per_1k,
-    }
-
-
 def _approved_candidates(candidates):
     return [model for model in candidates if model.approved and model.enabled]
 
 
-def build_payload(task, candidates, cwd="", health=None, health_ttl=3600, require_fingerprint=True):
-    if health is None:
-        raise ValueError("Jev payload requires fresh health evidence")
-    candidates = _cap_candidates(
-        eligible_models(
-            _approved_candidates(candidates),
-            health,
-            ttl_seconds=health_ttl,
-            require_fingerprint=require_fingerprint,
-        )
-    )
-    rows = [_candidate_dict(model) for model in candidates]
-    criteria = {model.id: model.when or model.purpose or model.model for model in candidates}
+def build_payload(task, cwd=""):
     return {
         "model": "jev-latest",
         "state": {
             "task": task,
             "cwd": cwd,
-            "hint": "Choose the smallest healthy approved execution plan. Use multiple models only when independent perspectives or parallel work are useful.",
-            "candidates": rows,
         },
         "questions": {
-            "needs_orchestrator": {
-                "type": "noul",
-                "instructions": "Should this task use multiple models and a captain instead of one model?",
+            "intent": {
+                "type": "choice",
+                "instructions": "What is the primary intent of `state.task`?",
                 "criteria": {
-                    "true": "Independent deliverables, disagreement reduction, or parallel work materially improves expected utility.",
-                    "false": "One model can complete the task and orchestration overhead is not justified.",
+                    "code": "Implement, debug, refactor, or test software.",
+                    "write": "Draft or edit prose, docs, or explanations.",
+                    "review": "Critique, check, or compare existing work.",
+                    "search": "Look up, browse, or gather information.",
+                    "other": "None of the other options fit, or the request is mixed or unclear.",
                 },
             },
-            "worker": {
-                "type": "choice",
-                "instructions": "Choose the best single model for this task.",
-                "criteria": criteria,
+            "difficulty": {
+                "type": "score",
+                "instructions": "How hard is `state.task` for a local coding assistant?",
+                "criteria": [
+                    "Simple lookup or a short local edit",
+                    "Requires some judgment or a multi-step process",
+                    "Unusual, high-stakes, or likely to need a stronger model",
+                ],
             },
-            "captain": {
-                "type": "choice",
-                "instructions": "Choose the strongest healthy captain if orchestration is needed.",
-                "criteria": criteria,
+            "needs_korean": {
+                "type": "noul",
+                "instructions": "Is Korean language quality central to completing `state.task` well?",
+                "criteria": {
+                    "true": "The output must be good Korean, or the source material is Korean.",
+                    "false": "Korean is incidental or unused.",
+                },
             },
         },
     }
@@ -148,106 +120,86 @@ def _answer_value(answers, name, field):
     return value
 
 
-def parse_decision(response, candidates, threshold=DEFAULT_THRESHOLD, health=None, health_ttl=3600, require_fingerprint=True):
+def _difficulty_level(score):
+    if score is None:
+        return 0
+    value = float(score)
+    if not math.isfinite(value):
+        raise ValueError("difficulty score must be finite")
+    if value in {0, 1, 2, 0.0, 1.0, 2.0}:
+        return int(value)
+    if 0 <= value <= 1:
+        if value < 1 / 3:
+            return 0
+        if value < 2 / 3:
+            return 1
+        return 2
+    raise ValueError("difficulty score must be 0, 1, or 2")
+
+
+def parse_classification(response):
     if not isinstance(response, dict):
         raise ValueError("Jev response must be an object")
-    if not math.isfinite(float(threshold)) or not 0 <= float(threshold) <= 1:
-        raise ValueError("orchestrator threshold must be between 0 and 1")
-    if health is None:
-        raise ValueError("Jev decision requires fresh health evidence")
-    candidates = _cap_candidates(
-        eligible_models(
-            _approved_candidates(candidates),
-            health,
-            ttl_seconds=health_ttl,
-            require_fingerprint=require_fingerprint,
-        )
-    )
-    allowed = {model.id: model for model in candidates}
-    candidate_body = response.get("decision", response)
-    body = candidate_body if isinstance(candidate_body, dict) else response
-    answers = body.get("answers", {})
+    body = response.get("decision", response)
+    if not isinstance(body, dict):
+        raise ValueError("Jev response must be an object")
+    answers = body.get("answers", body)
     if not isinstance(answers, dict):
         answers = {}
-    mode = body.get("mode") if isinstance(body, dict) else None
-    if not mode:
-        mode_score = _answer_value(answers, "needs_orchestrator", "noul")
-        if mode_score is not None and (not math.isfinite(float(mode_score)) or not 0 <= float(mode_score) <= 1):
-            raise ValueError("Jev orchestration score must be between 0 and 1")
-        mode = "orchestration" if float(mode_score or 0.0) >= threshold else "single"
-    if mode in {"orch", "multi", "captain"}:
-        mode = "orchestration"
-    if mode not in {"single", "orchestration"}:
-        raise ValueError("Jev returned an unknown execution mode")
-
-    worker = body.get("worker_id") or body.get("model_id") or _answer_value(answers, "worker", "choice")
-    captain = body.get("captain_id") or body.get("captain") or _answer_value(answers, "captain", "choice")
-    worker = worker or (candidates[0].id if candidates else "")
-    captain = captain or worker
-    workers = body.get("worker_ids") or body.get("workers")
-    if not workers:
-        workers = [worker]
-    if isinstance(workers, str):
-        workers = [workers]
-    if not all(isinstance(model_id, str) and model_id for model_id in workers):
-        raise ValueError("Jev worker IDs must be non-empty strings")
-    if len(set(workers)) != len(workers):
-        raise ValueError("Jev returned duplicate worker IDs")
-    workers = list(workers)
-    if mode == "orchestration" and captain not in workers:
-        workers.insert(0, captain)
-    selected = [model_id for model_id in workers if model_id in allowed]
-    if not selected or worker not in allowed or captain not in allowed:
-        raise ValueError("Jev selected a model outside the approved healthy candidate set")
-    if mode == "orchestration" and len(selected) < 2:
-        raise ValueError("Jev orchestration requires at least two approved models")
-    confidence = float(body.get("confidence", 0.0) or 0.0)
+    intent = _answer_value(answers, "intent", "choice") or "other"
+    if intent not in INTENTS:
+        intent = "other"
+    confidence = float(_answer_value(answers, "intent", "confidence") or 0.0)
     if not math.isfinite(confidence) or not 0 <= confidence <= 1:
-        raise ValueError("Jev confidence must be between 0 and 1")
+        raise ValueError("Jev intent confidence must be between 0 and 1")
+    difficulty = _difficulty_level(_answer_value(answers, "difficulty", "score"))
+    difficulty_confidence = float(_answer_value(answers, "difficulty", "confidence") or 0.0)
+    if not math.isfinite(difficulty_confidence) or not 0 <= difficulty_confidence <= 1:
+        raise ValueError("Jev difficulty confidence must be between 0 and 1")
+    korean = float(_answer_value(answers, "needs_korean", "noul") or 0.0)
+    if not math.isfinite(korean) or not 0 <= korean <= 1:
+        raise ValueError("Jev Korean score must be between 0 and 1")
+    probabilities = _answer_value(answers, "intent", "probabilities") or {}
+    if not isinstance(probabilities, dict):
+        probabilities = {}
     return {
-        "mode": mode,
-        "worker_id": worker,
-        "captain_id": captain,
-        "worker_ids": selected,
-        "confidence": confidence,
-        "reason": str(body.get("reason", "Jev selected the smallest eligible plan")),
+        "intent": intent,
+        "intent_confidence": confidence,
+        "intent_probabilities": probabilities,
+        "difficulty": difficulty,
+        "difficulty_confidence": difficulty_confidence,
+        "needs_korean": korean,
     }
 
 
-def route_task(task, candidates, client, cwd="", threshold=DEFAULT_THRESHOLD, health=None, health_ttl=3600, require_fingerprint=True):
+def classify_task(task, client, cwd=""):
+    payload = build_payload(task, cwd)
+    response, source, latency_ms = client.ask(payload)
+    classification = parse_classification(response)
+    classification["source"] = source
+    classification["jev_latency_ms"] = latency_ms
+    return classification
+
+
+def route_task(task, candidates, client, cwd="", health=None, health_ttl=3600, require_fingerprint=True, routing=None):
     if health is None:
         return {"status": "blocked", "reason": "Jev routing requires fresh health evidence"}
-    candidates = _cap_candidates(
-        eligible_models(
-            _approved_candidates(candidates),
-            health,
-            ttl_seconds=health_ttl,
-            require_fingerprint=require_fingerprint,
-        )
+    eligible = eligible_models(
+        _approved_candidates(candidates),
+        health,
+        ttl_seconds=health_ttl,
+        require_fingerprint=require_fingerprint,
     )
-    if not candidates:
+    if not eligible:
         return {"status": "blocked", "reason": "no approved healthy models"}
-    payload = build_payload(
-        task,
-        candidates,
-        cwd,
-        health=health,
-        health_ttl=health_ttl,
-        require_fingerprint=require_fingerprint,
-    )
-    response, source, latency_ms = client.ask(payload)
-    decision = parse_decision(
-        response,
-        candidates,
-        threshold,
-        health=health,
-        health_ttl=health_ttl,
-        require_fingerprint=require_fingerprint,
-    )
-    return {
-        "status": "ok",
-        **decision,
-        "source": source,
-        "jev_latency_ms": latency_ms,
-        "candidate_ids": [model.id for model in candidates],
-    }
+    classification = classify_task(task, client, cwd)
+    plan = apply_lookup(classification, eligible, routing)
+    plan["source"] = classification.get("source", "typesafe")
+    plan["jev_latency_ms"] = classification.get("jev_latency_ms", 0.0)
+    plan["candidate_ids"] = [model.id for model in eligible]
+    if isinstance(plan.get("classification"), dict):
+        plan["classification"] = {
+            **classification,
+            **plan["classification"],
+        }
+    return plan

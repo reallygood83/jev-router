@@ -3,8 +3,15 @@
   "health": {},
   "jev": {
     "endpoint": "https://api.typesafe.ai/v1/systemone",
-    "model": "jev-latest",
-    "orchestrator_threshold": 0.75
+    "model": "jev-latest"
+  },
+  "routing": {
+    "confidence_floor": 0.6,
+    "roles": {
+      "fast": "codex:gpt-5.6-sol",
+      "code": "codex:gpt-5.6-terra",
+      "write": "claude:sonnet"
+    }
   },
   "policy": {
     "lambda": 0.01,

@@ -107,6 +107,11 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["candidate_ids"], ["fixture-cheap", "fixture-strong"])
         self.assertNotIn("fixture-unapproved", payload["candidate_ids"])
         self.assertEqual(payload["source"], "fixture")
+        self.assertEqual(payload["mode"], "single")
+        self.assertEqual(payload["role"], "write")
+        self.assertEqual(payload["worker_id"], "fixture-strong")
+        self.assertEqual(payload["classification"]["intent"], "review")
+        self.assertFalse(payload["fallback"])
 
     def test_policy_baseline_fails_closed_for_empty_or_missing_models(self):
         self.assertEqual(_static_plan([], "single", ["missing"])["status"], "blocked")

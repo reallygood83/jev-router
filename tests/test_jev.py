@@ -1,8 +1,8 @@
 import unittest
 from datetime import datetime, timezone
-from typing import Any, cast
+from typing import Any
 
-from jev_router.jev import JevClient, build_payload, parse_decision, route_task
+from jev_router.jev import JevClient, build_payload, parse_classification, route_task
 from jev_router.registry import ModelSpec, model_fingerprint
 
 
@@ -11,9 +11,9 @@ class JevTests(unittest.TestCase):
     health: dict[str, dict[str, Any]] = {}
 
     def setUp(self):
-        self.models: list[ModelSpec] = [
-            ModelSpec(id="cheap", provider="codex", model="luna", approved=True),
-            ModelSpec(id="strong", provider="claude", model="opus", approved=True),
+        self.models = [
+            ModelSpec(id="cheap", provider="codex", model="luna", kind="codex", approved=True),
+            ModelSpec(id="strong", provider="claude", model="opus", kind="claude", approved=True),
         ]
         checked_at = datetime.now(timezone.utc).isoformat()
         self.health = {
@@ -21,65 +21,51 @@ class JevTests(unittest.TestCase):
             for model in self.models
         }
 
-    def test_payload_caps_large_candidate_sets(self):
-        models = [
-            ModelSpec(id=f"m{i:02d}", provider="codex", model=f"m{i}", approved=True, quality_prior=i / 20)
-            for i in range(10)
-        ]
-        health = {
-            model.id: {
-                "ok": True,
-                "checked_at": datetime.now(timezone.utc).isoformat(),
-                "model_fingerprint": model_fingerprint(model),
+    def test_payload_asks_intent_not_model_ids(self):
+        payload = build_payload("write tests")
+        questions = payload["questions"]
+        self.assertEqual(set(questions), {"intent", "difficulty", "needs_korean"})
+        self.assertEqual(questions["intent"]["type"], "choice")
+        self.assertEqual(questions["difficulty"]["type"], "score")
+        self.assertNotIn("candidates", payload["state"])
+        self.assertNotIn("cheap", str(questions))
+
+    def test_parse_classification_reads_typed_answers(self):
+        classification = parse_classification(
+            {
+                "answers": {
+                    "intent": {"choice": "review", "confidence": 0.82, "probabilities": {"review": 0.7}},
+                    "difficulty": {"score": 1, "confidence": 0.7},
+                    "needs_korean": {"noul": 0.12},
+                }
             }
-            for model in models
+        )
+        self.assertEqual(classification["intent"], "review")
+        self.assertEqual(classification["difficulty"], 1)
+        self.assertEqual(classification["intent_confidence"], 0.82)
+
+    def test_unknown_intent_becomes_other(self):
+        classification = parse_classification({"answers": {"intent": {"choice": "billing", "confidence": 0.9}}})
+        self.assertEqual(classification["intent"], "other")
+
+    def test_route_uses_lookup_instead_of_model_choice(self):
+        response = {
+            "answers": {
+                "intent": {"choice": "review", "confidence": 0.82},
+                "difficulty": {"score": 1, "confidence": 0.7},
+                "needs_korean": {"noul": 0.1},
+            }
         }
-        payload = build_payload("write tests", models, health=health)
-        state = cast(dict[str, Any], payload["state"])
-        candidates = cast(list[dict[str, Any]], state["candidates"])
-        self.assertEqual(len(candidates), 8)
-        self.assertEqual(candidates[0]["id"], "m09")
-
-    def test_payload_is_limited_to_approved_healthy_candidates(self):
-        unapproved = ModelSpec(id="unapproved", provider="grok", model="grok", approved=False)
-        payload = build_payload("write tests", self.models + [unapproved], health=self.health)
-        state = cast(dict[str, Any], payload["state"])
-        candidates = cast(list[dict[str, Any]], state["candidates"])
-        self.assertEqual([item["id"] for item in candidates], ["cheap", "strong"])
-
-    def test_jev_decision_selects_captain_and_workers(self):
-        response = {"mode": "orchestration", "captain_id": "strong", "worker_ids": ["cheap", "strong"]}
-        decision = parse_decision(response, self.models, health=self.health)
-        self.assertEqual(decision["mode"], "orchestration")
-        self.assertEqual(decision["captain_id"], "strong")
-
         client = JevClient(transport=lambda endpoint, body, key: response)
-        result = route_task("write tests", self.models, client, health=self.health)
+        result = route_task("compare two designs", self.models, client, health=self.health)
         self.assertEqual(result["status"], "ok")
-        self.assertEqual(result["worker_ids"], ["cheap", "strong"])
-
-    def test_jev_cannot_select_outside_candidate_set(self):
-        with self.assertRaises(ValueError):
-            parse_decision({"mode": "single", "model_id": "not-approved"}, self.models, health=self.health)
-
-    def test_jev_orchestration_requires_two_models(self):
-        with self.assertRaises(ValueError):
-            parse_decision(
-                {"mode": "orchestration", "captain_id": "cheap", "worker_ids": ["cheap"]},
-                self.models,
-                health=self.health,
-            )
-
-    def test_jev_rejects_duplicate_workers(self):
-        with self.assertRaises(ValueError):
-            parse_decision(
-                {"mode": "orchestration", "captain_id": "strong", "worker_ids": ["cheap", "strong", "strong"]},
-                self.models,
-                health=self.health,
-            )
+        self.assertEqual(result["mode"], "single")
+        self.assertEqual(result["role"], "write")
+        self.assertEqual(result["worker_id"], "strong")
+        self.assertEqual(result["candidate_ids"], ["cheap", "strong"])
 
     def test_route_requires_health_evidence(self):
-        client = JevClient(transport=lambda endpoint, body, key: {"mode": "single", "model_id": "cheap"})
+        client = JevClient(transport=lambda endpoint, body, key: {"answers": {"intent": {"choice": "code", "confidence": 0.9}}})
         result = route_task("write tests", self.models, client)
         self.assertEqual(result["status"], "blocked")
 

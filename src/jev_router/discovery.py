@@ -318,7 +318,7 @@ def when_hint(model):
     return ""
 
 
-def recommended_ids(models, limit=4):
+def recommended_ids(models, limit=3):
     available = []
     grok = []
     kimi = []

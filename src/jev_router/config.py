@@ -14,7 +14,7 @@ def default_config_path():
 def load_config(path=None) -> dict[str, Any]:
     target = Path(path or default_config_path())
     if not target.exists():
-        return {"registry": [], "health": {}, "jev": {}, "policy": {}}
+        return {"registry": [], "health": {}, "jev": {}, "policy": {}, "routing": {}}
     payload = json.loads(target.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("config must be a JSON object")
@@ -22,6 +22,7 @@ def load_config(path=None) -> dict[str, Any]:
     payload.setdefault("health", {})
     payload.setdefault("jev", {})
     payload.setdefault("policy", {})
+    payload.setdefault("routing", {})
     return payload
 
 

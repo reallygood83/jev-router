@@ -14,9 +14,10 @@ from .config import load_config, load_weights, models_from_config, put_models, s
 from .discovery import discover_local_models, recommended_ids, when_hint
 from .evaluation import evaluate_rows, load_jsonl, merge_live_scores, render_report
 from .health import partition_health_targets, probe_models
-from .jev import DEFAULT_THRESHOLD, JevClient, JevUnavailable, route_task
+from .jev import JevClient, JevUnavailable, route_task
 from .policy import StrategyEstimate, choose_strategy
 from .registry import ModelSpec, eligible_models, validate_registry
+from .routing import DEFAULT_CONFIDENCE_FLOOR, bind_roles
 
 
 def _digest(text):
@@ -189,9 +190,19 @@ def cmd_register(args):
     for model_id in wanted:
         model = by_id[model_id]
         existing[model_id] = replace(model, approved=True, when=model.when or when_hint(model))
-    put_models(config, validate_registry(existing.values()))
+    registered = validate_registry(existing.values())
+    put_models(config, registered)
+    routing = dict(config.get("routing") or {})
+    routing.setdefault("confidence_floor", DEFAULT_CONFIDENCE_FLOOR)
+    routing["roles"] = bind_roles(registered)
+    config["routing"] = routing
     save_config(args.config, config)
-    output = {"status": "registered", "approved_ids": sorted(wanted), "config": str(Path(args.config).expanduser())}
+    output = {
+        "status": "registered",
+        "approved_ids": sorted(wanted),
+        "roles": routing.get("roles", {}),
+        "config": str(Path(args.config).expanduser()),
+    }
     print(json.dumps(output, ensure_ascii=False, indent=2))
     return 0
 
@@ -295,10 +306,10 @@ def cmd_route(args, parts):
                 candidates,
                 client,
                 cwd=str(Path.cwd()),
-                threshold=float(jev.get("orchestrator_threshold", DEFAULT_THRESHOLD)),
                 health=health,
                 health_ttl=args.health_ttl,
                 require_fingerprint=require_fingerprint,
+                routing=config.get("routing") or {},
             )
         except (JevUnavailable, ValueError) as exc:
             plan = {"status": "blocked", "reason": str(exc), "source": "jev"}
@@ -419,7 +430,10 @@ def cmd_benchmark(args):
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(prog="jev-router")
+    parser = argparse.ArgumentParser(
+        prog="jev-router",
+        description="Classify a task with TypeSafe Jev, then run a local model selected by your routing table.",
+    )
     parser.add_argument("parts", nargs="*")
     parser.add_argument("--config", default=str(Path.home() / ".config" / "jev-router" / "config.json"))
     parser.add_argument("--task-file")

@@ -37,7 +37,7 @@ class DiscoveryTests(unittest.TestCase):
         ]
         self.assertEqual(
             recommended_ids(models),
-            ["codex:gpt-5.6-sol", "codex:gpt-5.6-terra", "claude:sonnet", "grok:grok-4.6"],
+            ["codex:gpt-5.6-sol", "codex:gpt-5.6-terra", "claude:sonnet"],
         )
 
     def test_claude_aliases_are_not_available_without_executable(self):

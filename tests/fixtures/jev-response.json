@@ -1,7 +1,22 @@
 {
-  "mode": "orchestration",
-  "captain_id": "fixture-strong",
-  "worker_ids": ["fixture-cheap", "fixture-strong"],
-  "confidence": 0.88,
-  "reason": "parallel review improves expected quality for this fixture task"
+  "answers": {
+    "intent": {
+      "choice": "review",
+      "confidence": 0.82,
+      "probabilities": {
+        "code": 0.08,
+        "write": 0.12,
+        "search": 0.04,
+        "review": 0.72,
+        "other": 0.04
+      }
+    },
+    "difficulty": {
+      "score": 1,
+      "confidence": 0.7
+    },
+    "needs_korean": {
+      "noul": 0.12
+    }
+  }
 }
