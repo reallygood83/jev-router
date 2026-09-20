@@ -7,5 +7,10 @@
   "worker_ids": ["fixture-cheap", "fixture-strong"],
   "confidence": 0.88,
   "source": "fixture",
+  "strategy_gate": {
+    "strategy": "jev",
+    "reason": "Jev lower confidence bound beats the best baseline by the required margin",
+    "delta_lcb95": 0.06
+  },
   "candidate_ids": ["fixture-cheap", "fixture-strong"]
 }

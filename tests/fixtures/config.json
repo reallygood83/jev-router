@@ -40,5 +40,13 @@
   "jev": {
     "response_file": "tests/fixtures/jev-response.json",
     "orchestrator_threshold": 0.6
+  },
+  "policy": {
+    "delta": 0.02,
+    "strategy_estimates": [
+      {"strategy": "single", "mean": 0.70, "lcb95": 0.60},
+      {"strategy": "static-team", "mean": 0.73, "lcb95": 0.58},
+      {"strategy": "jev", "mean": 0.82, "lcb95": 0.66}
+    ]
   }
 }

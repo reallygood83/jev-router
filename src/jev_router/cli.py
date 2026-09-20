@@ -5,7 +5,7 @@ import sys
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import cast
+from typing import Any, Optional, cast
 
 from .adapters import execute_plan
 from .benchmark import run_benchmark, save_jsonl
@@ -14,6 +14,7 @@ from .discovery import discover_local_models
 from .evaluation import evaluate_rows, load_jsonl, render_report
 from .health import probe_model
 from .jev import JevClient, JevUnavailable, route_task
+from .policy import StrategyEstimate, choose_strategy
 from .registry import ModelSpec, eligible_models, validate_registry
 
 
@@ -48,15 +49,19 @@ def _health(config):
     return normalized
 
 
-def _base_output(task, plan):
+def _base_output(task, plan: dict[str, Any]) -> dict[str, Any]:
     return {
         "task_digest": _digest(task),
         **plan,
     }
 
 
-def _static_plan(models, mode):
-    ordered = sorted(models, key=lambda model: (model.quality_prior, -model.input_cost_per_1k), reverse=True)
+def _static_plan(models, mode, model_ids=None) -> dict[str, Any]:
+    by_id = {model.id: model for model in models}
+    if isinstance(model_ids, str):
+        model_ids = [model_ids]
+    selected = [by_id[model_id] for model_id in model_ids or () if model_id in by_id]
+    ordered = selected or sorted(models, key=lambda model: (model.quality_prior, -model.input_cost_per_1k), reverse=True)
     captain = ordered[0]
     if mode == "single":
         return {
@@ -79,6 +84,27 @@ def _static_plan(models, mode):
         "confidence": 1.0,
         "reason": "explicit orchestration mode",
         "source": "explicit",
+    }
+
+
+def _strategy_gate(config: dict[str, Any]) -> Optional[dict[str, Any]]:
+    policy = config.get("policy", {})
+    raw_estimates = policy.get("strategy_estimates")
+    if not raw_estimates:
+        return None
+    estimates = [
+        StrategyEstimate(
+            strategy=str(item["strategy"]),
+            mean=float(item["mean"]),
+            lcb95=float(item["lcb95"]),
+        )
+        for item in raw_estimates
+    ]
+    decision = choose_strategy(estimates, delta=float(policy.get("delta", 0.0)))
+    return {
+        "strategy": decision.strategy,
+        "reason": decision.reason,
+        "delta_lcb95": decision.delta_lcb95,
     }
 
 
@@ -172,10 +198,18 @@ def cmd_route(args, parts):
     config = load_config(args.config)
     models = validate_registry(models_from_config(config))
     candidates = eligible_models(models, _health(config), ttl_seconds=args.health_ttl)
+    gate = _strategy_gate(config)
+    plan: dict[str, Any]
     if args.single:
         plan = _static_plan(candidates, "single") if candidates else {"status": "blocked", "reason": "no approved healthy models"}
     elif args.orch:
         plan = _static_plan(candidates, "orchestration") if candidates else {"status": "blocked", "reason": "no approved healthy models"}
+    elif gate and gate["strategy"] in {"single", "static-team"}:
+        policy = config.get("policy", {})
+        ids = [policy.get("single_model_id")] if gate["strategy"] == "single" else policy.get("static_team_ids", [])
+        plan = _static_plan(candidates, "single" if gate["strategy"] == "single" else "orchestration", ids)
+        plan["source"] = "policy"
+        plan["strategy_gate"] = gate
     else:
         jev = config.get("jev", {})
         response_file = _optional_path(args.response_file or jev.get("response_file"), args.config)
@@ -188,6 +222,8 @@ def cmd_route(args, parts):
             plan = route_task(task, candidates, client, cwd=str(Path.cwd()), threshold=float(jev.get("orchestrator_threshold", 0.6)))
         except (JevUnavailable, ValueError) as exc:
             plan = {"status": "blocked", "reason": str(exc), "source": "jev"}
+        if gate:
+            plan["strategy_gate"] = gate
     output = _base_output(task, plan)
     if args.execute and plan.get("status") == "ok":
         output["execution"] = execute_plan(plan, models, task, timeout_seconds=args.timeout)

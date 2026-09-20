@@ -1,0 +1,27 @@
+test_execute_plan_uses_captain_after_parallel_workers (test_adapters.AdapterTests) ... ok
+test_prompt_command_keeps_provider_arguments (test_adapters.AdapterTests) ... ok
+test_dry_run_returns_only_approved_healthy_candidates (test_cli.CliTests) ... ok
+test_missing_provider_inventory_is_not_fabricated (test_discovery.DiscoveryTests) ... ok
+test_provider_parsers_keep_real_models_and_ignore_headers (test_discovery.DiscoveryTests) ... ok
+test_invalid_weights_and_bootstrap_count_are_rejected (test_evaluation.EvaluationTests) ... ok
+test_paired_report_is_deterministic_and_correct (test_evaluation.EvaluationTests) ... ok
+test_failed_or_stale_models_are_excluded (test_health.HealthTests) ... ok
+test_missing_or_future_health_timestamp_is_excluded (test_health.HealthTests) ... ok
+test_command_mapping_keeps_model_arguments (test_health_probe.HealthProbeTests) ... ok
+test_empty_probe_output_is_not_healthy (test_health_probe.HealthProbeTests) ... ok
+test_jev_cannot_select_outside_candidate_set (test_jev.JevTests) ... ok
+test_jev_decision_selects_captain_and_workers (test_jev.JevTests) ... ok
+test_payload_is_limited_to_approved_healthy_candidates (test_jev.JevTests) ... ok
+test_non_finite_confidence_is_rejected (test_policy.PolicyTests) ... ok
+test_orchestration_is_selected_when_lower_bound_beats_baseline (test_policy.PolicyTests) ... ok
+test_orchestration_requires_positive_conservative_delta (test_policy.PolicyTests) ... ok
+test_duplicate_ids_are_rejected (test_registry.RegistryTests) ... ok
+test_metadata_validation_rejects_negative_cost (test_registry.RegistryTests) ... ok
+test_metadata_validation_rejects_non_finite_cost (test_registry.RegistryTests) ... ok
+test_unapproved_models_are_excluded (test_registry.RegistryTests) ... ok
+test_registry_round_trip_preserves_approval_and_metadata (test_registry_storage.RegistryStorageTests) ... ok
+
+----------------------------------------------------------------------
+Ran 22 tests in 0.004s
+
+OK
