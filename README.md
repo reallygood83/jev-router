@@ -75,6 +75,37 @@ Example score record:
 
 The scoring process can use `jev_router.evidence.sign_record(record, JEV_SCORER_KEY, "score_signature")`; keep that process and key outside the task runner.
 
+## Usage and evidence
+
+The following commands reproduce the checked-in fixture route and effectiveness report from the repository root. `PYTHONPATH=src` ensures they execute this checkout rather than an older global installation.
+
+```bash
+PYTHONPATH=src python3 -m jev_router \
+  --config tests/fixtures/config.json \
+  --response-file tests/fixtures/jev-response.json \
+  --dry-run --json \
+  --task-file tests/fixtures/task.txt
+
+# Exit code 2 is intentional: fixture evidence is never publishable.
+PYTHONPATH=src python3 -m jev_router evaluate \
+  --input artifacts/benchmark.jsonl \
+  --weights config/weights.toml \
+  --output /tmp/jev-router-effectiveness.md \
+  --evidence-class fixture
+```
+
+The checked-in benchmark contains 24 records: 8 paired holdout tasks across `single`, `static-team`, and `jev`. It produced:
+
+| Check | Result | Interpretation |
+| --- | --- | --- |
+| Fixture route | 2 approved/healthy candidates; orchestration selected; `delta_lcb95=0.06` vs required `0.02` | The policy gate selects Jev only when the declared margin is cleared. |
+| Fixture effectiveness | Mean utility delta `+0.108`; bootstrap 95% CI `[+0.108, +0.108]`; verdict `effective` | Jev wins on this declared fixture distribution. |
+| Publication gate | `publishable=false` | This is evaluator/route evidence, not live provider quality evidence. |
+| Live discovery snapshot | Codex 79, Grok 84, Claude 6, Kimi 4; Cursor unavailable | Local inventory discovery is observable. |
+| Live health snapshot | 3 probe models failed or timed out; 0 eligible models | A real-world benefit claim is not yet supported by live execution. |
+
+The source reports are [`artifacts/effectiveness.md`](artifacts/effectiveness.md), [`artifacts/c5-cli.json`](artifacts/c5-cli.json), [`artifacts/c6-live-discovery.json`](artifacts/c6-live-discovery.json), and [`artifacts/c6-live-health.json`](artifacts/c6-live-health.json). The honest conclusion is conditional: this repository proves deterministic routing and evaluation, and the fixture shows a positive result; it does not yet prove that Jev improves real provider output. That requires a live holdout run with signed execution and independent score records.
+
 ## Links
 
 [배움의달인 YouTube](https://www.youtube.com/@%EB%B0%B0%EC%9B%80%EC%9D%98%EB%8B%AC%EC%9D%B8-p5v) · [X @reallygood83](https://x.com/reallygood83)
