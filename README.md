@@ -58,3 +58,11 @@ Fixture numbers in `artifacts/` test the evaluator. They are not a live quality 
 ## License
 
 MIT
+
+## Troubleshooting
+
+**Codex App shows "다시 연결 중" / reconnecting.** The gate must speak HTTP/1.1. Run `jev-gate` from this repo (0.3.2+). In the GUI, connection should show `gate 0.3.2 HTTP/1.1`. Then fully quit Codex (Cmd+Q) and reopen. `openai_base_url` must be `http://127.0.0.1:10115/v1`.
+
+**Pack or TypeSafe key will not save.** You are on a stale process that still proxies `/api` to OpenCodex (401) or crashes on `~/.config` permissions. Stop it and start `jev-gate` again. A second `jev-gate` on the same port replaces the previous one via a pid file.
+
+**ChatGPT app does nothing.** Expected. Only Codex App/CLI (or another client using that base URL) hits the gate.

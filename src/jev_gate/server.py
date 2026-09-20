@@ -175,7 +175,13 @@ class GateHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _status(self):
-        info = {"opencodex_ok": False, "opencodex_version": "", "jev_key_set": key_is_set()}
+        info = {
+            "opencodex_ok": False,
+            "opencodex_version": "",
+            "jev_key_set": key_is_set(),
+            "gate_version": GATE_VERSION,
+            "http": "1.1",
+        }
         try:
             with urlopen(Request(f"http://{self.state.upstream_host}:{self.state.upstream_port}/healthz"), timeout=2) as res:
                 payload = json.loads(res.read().decode("utf-8"))

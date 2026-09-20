@@ -141,9 +141,9 @@ async function loadMeta() {
   ]);
   const secrets = await secretsRes.json().catch(() => ({}));
   const stale = $("stale");
-  if (secretsRes.status === 401 || secrets.error) {
+  if (secretsRes.status === 401 || secrets.error || !status.gate_version) {
     stale.style.display = "block";
-    stale.textContent = "이 탭의 게이트는 저장을 못합니다. http://127.0.0.1:10115/ 를 새로 여세요.";
+    stale.textContent = "이 탭은 예전 게이트입니다. 터미널에서 jev-gate 를 다시 실행한 뒤 이 주소를 새로고침하세요. Codex App이 다시 연결 중이면 HTTP/1.0 프록시입니다.";
   } else {
     stale.style.display = "none";
   }
