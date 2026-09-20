@@ -74,7 +74,6 @@ def _install_claude_mcp():
     servers["typesafe-jev"] = {
         "command": spec["command"],
         "args": spec["args"],
-        "env": spec["env"],
     }
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

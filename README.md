@@ -1,87 +1,60 @@
 # jev-router
 
-OpenCodex 앞에 역할 게이트를 쓰려면 **`jev-gate`** 를 켭니다. GUI에서 home/implement/research/write 모델을 고르고, Codex Base URL을 `http://127.0.0.1:10101/v1` 로 둡니다. 자세한 범위는 `docs/jev-gate-PRD.md`, `docs/jev-gate-SPEC.md`.
+Two tools:
 
-```bash
-PYTHONPATH=src python3 -m jev_gate --port 10101 --upstream http://127.0.0.1:10100
-```
+- **`jev-gate`**: thin role gate in front of [OpenCodex](https://github.com/bitkyc08/opencodex). A local GUI binds home / implement / research / write to catalog models. Jev classifies the prompt; the gate rewrites `model` (and optional `reasoning_effort`) only when the client is still on **home**.
+- **`jev-router`**: opt-in CLI that classifies a task, then runs a local provider CLI from a routing table.
 
-`jev-router` classifies a task with [TypeSafe Jev](https://docs.typesafe.ai/concepts/use-case-map.md), then runs a local model that **your routing table** selected.
-
-Jev does not pick `codex:gpt-5.6-sol` or any other model id. It answers three System One questions:
-
-- Choice: `code` / `write` / `search` / `review` / `other`
-- Score: difficulty `0` / `1` / `2`
-- Noul: is Korean quality central?
-
-Code maps that to one of three roles: `fast`, `code`, `write`. If intent confidence is below `0.6`, the router ignores the classification and uses `fast`. Teams are opt-in (`--orch`); the default plan is always a single model.
-
-This is not evidence that Jev chooses better models than a human. It is a small, honest classifier in front of CLIs you already have.
+Jev does not pick model ids. It picks a role. Failures pass through.
 
 ## Install
 
+Requires Python 3.9+ and a running OpenCodex on `http://127.0.0.1:10100`.
+
 ```bash
+git clone https://github.com/reallygood83/jev-router.git
+cd jev-router
 python3 -m pip install -e .
+```
+
+## Jev Gate (recommended)
+
+```bash
+jev-gate
+```
+
+Then:
+
+1. Open http://127.0.0.1:10111/
+2. Save a TypeSafe API key (stored in `~/.config/jev-gate/secrets.json`, mode 600, never shown again)
+3. Set home + role models from the live OpenCodex catalog
+4. Point Codex / any OpenAI-compatible client at `http://127.0.0.1:10111/v1`
+5. Leave the picker on **home**. Search prompts can rewrite to research; code prompts to implement.
+
+Without a key, the gate is a pure proxy (`error-pass`). If OpenCodex is down, the client sees the upstream error.
+
+```bash
+jev-gate --port 10111 --upstream http://127.0.0.1:10100
+```
+
+## jev-router CLI
+
+```bash
 export TYPESAFE_API_KEY=...
 jev-router setup --json
+jev-router --dry-run --json "format this note"
 ```
 
-`setup` discovers local Codex / Grok / Claude / Cursor Agent / Kimi CLIs, registers a 3-model pool when those IDs exist (`codex:gpt-5.6-sol`, `codex:gpt-5.6-terra`, `claude:sonnet`), binds roles, and health-checks only those models.
+`--dry-run` never launches a provider. `--execute` runs the mapped CLI. `--single` / `--orch` bypass Jev.
 
-No provider keys are stored here. Jev reads `TYPESAFE_API_KEY`. Provider subprocesses keep their own env and config, except `TYPESAFE_*` and `JEV_*` secrets which are stripped.
+## Skill / MCP
 
-## Route
-
-```bash
-jev-router --dry-run --json "이 함수 테스트 짜줘"
-jev-router --execute "이 함수 테스트 짜줘"
-jev-router --single --dry-run --json "format this note"
-jev-router --orch --dry-run --json "compare two independent designs"
-```
-
-`--dry-run` never launches a provider. `--execute` runs the mapped CLI. Without a Jev key, the default route returns `status: blocked`; `--single` and `--orch` bypass Jev.
-
-A dry-run JSON includes `intent`, `difficulty`, `intent_confidence`, `role`, `worker_id`, and `fallback`. That classification is the product.
-
-## Routing table
-
-`~/.config/jev-router/config.json`:
-
-```json
-{
-  "routing": {
-    "confidence_floor": 0.6,
-    "roles": {
-      "fast": "codex:gpt-5.6-sol",
-      "code": "codex:gpt-5.6-terra",
-      "write": "claude:sonnet"
-    }
-  }
-}
-```
-
-| Intent | Difficulty | Role |
-| --- | --- | --- |
-| `code` | 0 | `fast` |
-| `code` | 1 or 2 | `code` |
-| `write` / `review` | any | `write` |
-| `search` | 0 or 1 | `fast` |
-| `search` | 2 | `code` |
-| Korean-central write/search/other | any | `fast` |
-| confidence < floor | any | `fast` |
-
-Edit the role IDs to match models you actually registered. `health` probes in parallel and reuses records inside `--health-ttl`. Pass `--refresh` to probe again.
+From the gate GUI: **스킬 원클릭 설치** copies a portable TypeSafe skill into `~/.agents/skills`, `~/.codex/skills`, and `~/.claude/skills`. **MCP 원클릭 설치** adds `typesafe-jev` to Codex `config.toml` and Claude `mcpServers` using `python -m jev_gate.mcp`. The API key is not written into those configs.
 
 ## Evidence
 
-Fixture evaluator numbers in `artifacts/` test the math. They are not a live quality claim. `publishable=false` until you run a signed holdout with independent scores. See `jev-router evaluate --help` and `config/weights.toml`.
+Fixture numbers in `artifacts/` test the evaluator. They are not a live quality claim.
 
-## 한국어
+## License
 
-Jev는 모델 이름을 고르지 않습니다. 작업의 의도·난이도·한국어 중요도만 분류하고, 실행할 CLI는 로컬 라우팅 테이블이 정합니다. confidence가 낮으면 `fast`로 떨어집니다. 기본은 단일 모델이고, 팀은 `--orch`일 때만 씁니다.
-
-처음에는 `setup`으로 3개만 등록하세요. `discover`는 목록 확인용입니다.
-
-## Evidence boundary
-
-There is no theorem that Jev wins on every task. The honest claim is: on the registered role map and declared confidence floor, Jev either classifies with enough confidence to leave the default, or it does not.
+MIT
