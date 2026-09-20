@@ -15,6 +15,11 @@ from jev_router.registry import ModelSpec
 
 
 class CliTests(unittest.TestCase):
+    def test_dry_run_and_execute_are_mutually_exclusive(self):
+        with self.assertRaises(SystemExit) as raised:
+            main(["--dry-run", "--execute", "format this note"])
+        self.assertEqual(raised.exception.code, 2)
+
     def test_dry_run_returns_only_approved_healthy_candidates(self):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
