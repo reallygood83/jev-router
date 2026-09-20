@@ -14,6 +14,8 @@ def _model_flag(model):
 
 
 def command_for_prompt(model, prompt):
+    if not isinstance(prompt, str) or prompt.startswith("-"):
+        raise ValueError("prompts beginning with '-' are not supported for provider argv execution")
     kind = (model.kind or model.provider).lower()
     executable = provider_executable(model)
     if kind == "codex":
@@ -30,9 +32,12 @@ def command_for_prompt(model, prompt):
 
 
 def run_model(model, prompt, timeout_seconds=120, runner=None):
-    command = command_for_prompt(model, prompt)
-    execute = runner or _run
     started = time.perf_counter()
+    try:
+        command = command_for_prompt(model, prompt)
+    except ValueError as exc:
+        return {"ok": False, "reason": str(exc), "output": "", "latency_ms": _latency(started)}
+    execute = runner or _run
     try:
         result = execute(command, timeout=timeout_seconds)
     except subprocess.TimeoutExpired:

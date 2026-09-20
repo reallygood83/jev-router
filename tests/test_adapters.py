@@ -43,6 +43,11 @@ class AdapterTests(unittest.TestCase):
         model = ModelSpec(id="sol", provider="codex", model="sol", argv=("-m", "sol"))
         self.assertEqual(command_for_prompt(model, "task")[-2:], ["-m", "sol"])
 
+    def test_option_like_prompt_is_rejected_before_provider_execution(self):
+        model = ModelSpec(id="sol", provider="codex", model="sol")
+        with self.assertRaises(ValueError):
+            command_for_prompt(model, "--unexpected-provider-option")
+
     def test_execute_plan_rejects_unapproved_model(self):
         model = ModelSpec(id="unapproved", provider="codex", model="sol")
         result = execute_plan(
