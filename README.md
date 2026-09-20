@@ -75,6 +75,10 @@ Example score record:
 
 The scoring process can use `jev_router.evidence.sign_record(record, JEV_SCORER_KEY, "score_signature")`; keep that process and key outside the task runner.
 
+## Links
+
+[배움의달인 YouTube](https://www.youtube.com/@%EB%B0%B0%EC%9B%80%EC%9D%98%EB%8B%AC%EC%9D%B8-p5v) · [X @reallygood83](https://x.com/reallygood83)
+
 ## 한국어
 
 `jev-router`는 로컬에서 실제 사용 가능한 AI 모델을 발견하고, 사용자가 승인한 모델 중 health check를 통과한 후보만 Jev에게 전달하는 얇은 라우터입니다. 일반 프롬프트를 가로채지 않고 사용자가 명시적으로 호출했을 때만 동작합니다.
