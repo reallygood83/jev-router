@@ -10,6 +10,7 @@ from urllib.request import Request, urlopen
 
 from jev_router.jev import JevUnavailable
 
+from . import GATE_VERSION
 from .classify import classify_task
 from .decide import decide
 from .extract import extract_task, thread_key
@@ -113,6 +114,8 @@ class GateHandler(BaseHTTPRequestHandler):
             return self._json(200, {"jev_key_set": key_is_set()})
         if path == "/api/install":
             return self._json(200, install_status())
+        if path == "/api/autostart":
+            return self._json(200, autostart_status())
         if path.startswith("/api/"):
             return self._json(404, {"error": "unknown api"})
         return self._proxy()
@@ -144,6 +147,8 @@ class GateHandler(BaseHTTPRequestHandler):
             return self._save_secrets()
         if path == "/api/install":
             return self._install()
+        if path == "/api/autostart":
+            return self._autostart()
         if path.startswith("/api/"):
             return self._json(404, {"error": "unknown api"})
         if path in PATCH_PATHS:
@@ -294,6 +299,25 @@ class GateHandler(BaseHTTPRequestHandler):
         result["status"] = install_status()
         return self._json(200, result)
 
+    def _autostart(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except ValueError:
+            payload = {}
+        enabled = bool((payload or {}).get("enabled"))
+        host, port = self.server.server_address[:2]
+        upstream = f"http://{self.state.upstream_host}:{self.state.upstream_port}"
+        try:
+            if enabled:
+                result = autostart_enable(host=host or "127.0.0.1", port=port, upstream=upstream)
+            else:
+                result = autostart_disable()
+        except OSError as exc:
+            return self._json(500, {"ok": False, "error": str(exc)})
+        return self._json(200, result)
+
     def _read_body(self):
         encoding = (self.headers.get("Transfer-Encoding") or "").lower()
         if "chunked" in encoding:
@@ -390,4 +414,6 @@ def make_server(host="127.0.0.1", port=10101, upstream="http://127.0.0.1:10100",
         allow_reuse_address = True
 
     httpd = ReuseServer((host, port), BoundHandler)
+    return httpd, state
+eServer((host, port), BoundHandler)
     return httpd, state

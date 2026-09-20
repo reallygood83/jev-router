@@ -30,6 +30,7 @@ Then:
 3. Set home + role models from the live OpenCodex catalog
 4. Point Codex / any OpenAI-compatible client at `http://127.0.0.1:10115/v1`
 5. Leave the picker on **home**. Search prompts can rewrite to research; code prompts to implement.
+6. Click **상시 실행 켜기** so the gate starts at login and stays up if it crashes.
 
 Without a key, the gate is a pure proxy (`error-pass`). If OpenCodex is down, the client sees the upstream error.
 

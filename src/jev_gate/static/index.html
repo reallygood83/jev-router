@@ -37,6 +37,12 @@
     <p id="health" class="status">확인 중…</p>
     <p id="keyStatus" class="hint">TypeSafe 키: 확인 중</p>
     <p class="hint">이 탭 주소가 게이트입니다. Codex Base URL은 같은 호스트의 <code>/v1</code>.</p>
+    <p id="autoStatus" class="hint">상시 실행: 확인 중</p>
+    <div class="actions">
+      <button type="button" id="autoOn">상시 실행 켜기</button>
+      <button type="button" class="secondary" id="autoOff">상시 실행 끄기</button>
+    </div>
+    <p id="autoMsg" class="hint">로그인 후에도 게이트를 켜 둡니다. Mac LaunchAgent를 설치합니다.</p>
   </section>
   <section>
     <h2>TypeSafe API</h2>
@@ -200,13 +206,17 @@ async function install(kind) {
 }
 $("installSkill").onclick = () => install("skill");
 $("installMcp").onclick = () => install("mcp");
+async function setAuto(enabled) {
+  const res = await fetch("/api/autostart", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled }) });
+  const data = await res.json().catch(() => ({}));
+  $("autoMsg").textContent = data.ok ? (enabled ? "상시 실행을 켰습니다. 터미널을 닫아도 유지됩니다." : "상시 실행을 껐습니다.") : (data.error || data.launchctl || ("실패 " + res.status));
+  loadMeta();
+}
+$("autoOn").onclick = () => setAuto(true);
+$("autoOff").onclick = () => setAuto(false);
 loadPackForm();
 loadMeta();
 setInterval(loadMeta, 4000);
-</script>
-</body>
-</html>
-
 </script>
 </body>
 </html>
