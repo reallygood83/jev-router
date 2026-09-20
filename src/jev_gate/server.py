@@ -1,5 +1,7 @@
 import json
 import os
+import select
+import socket
 from collections import deque
 from datetime import datetime, timezone
 from http.client import HTTPConnection
@@ -118,6 +120,8 @@ class GateHandler(BaseHTTPRequestHandler):
             return self._json(200, autostart_status())
         if path.startswith("/api/"):
             return self._json(404, {"error": "unknown api"})
+        if (self.headers.get("Upgrade") or "").lower() == "websocket":
+            return self._websocket_tunnel()
         return self._proxy()
 
     def do_PUT(self):
@@ -339,6 +343,41 @@ class GateHandler(BaseHTTPRequestHandler):
             return b"".join(chunks)
         length = int(self.headers.get("Content-Length") or 0)
         return self.rfile.read(length) if length else b""
+
+    def _websocket_tunnel(self):
+        upstream = socket.create_connection(
+            (self.state.upstream_host, self.state.upstream_port),
+            timeout=10,
+        )
+        lines = [f"{self.command} {self.path} HTTP/1.1"]
+        host = f"{self.state.upstream_host}:{self.state.upstream_port}"
+        lines.append(f"Host: {host}")
+        for key, value in self.headers.items():
+            if str(key).lower() == "host":
+                continue
+            lines.append(f"{key}: {value}")
+        upstream.sendall(("\r\n".join(lines) + "\r\n\r\n").encode("iso-8859-1"))
+        client = self.connection
+        sockets = [client, upstream]
+        try:
+            while True:
+                readable, _, failed = select.select(sockets, [], sockets, 300)
+                if failed:
+                    break
+                if not readable:
+                    continue
+                for sock in readable:
+                    data = sock.recv(65536)
+                    if not data:
+                        return
+                    dest = upstream if sock is client else client
+                    dest.sendall(data)
+        finally:
+            try:
+                upstream.close()
+            except OSError:
+                pass
+            self.close_connection = True
 
     def _proxy(self, patch=False):
         raw = self._read_body() if self.command in {"POST", "PUT", "PATCH"} else b""
