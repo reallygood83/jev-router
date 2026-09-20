@@ -51,6 +51,14 @@ class JevTests(unittest.TestCase):
                 health=self.health,
             )
 
+    def test_jev_rejects_duplicate_workers(self):
+        with self.assertRaises(ValueError):
+            parse_decision(
+                {"mode": "orchestration", "captain_id": "strong", "worker_ids": ["cheap", "strong", "strong"]},
+                self.models,
+                health=self.health,
+            )
+
     def test_route_requires_health_evidence(self):
         client = JevClient(transport=lambda endpoint, body, key: {"mode": "single", "model_id": "cheap"})
         result = route_task("write tests", self.models, client)

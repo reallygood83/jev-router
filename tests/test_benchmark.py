@@ -44,6 +44,14 @@ class BenchmarkTests(unittest.TestCase):
         self.assertEqual(manifest["row_count"], 3)
         self.assertEqual(len(str(manifest["manifest_signature"])), 64)
 
+        with self.assertRaises(ValueError):
+            build_manifest(rows[:2], evidence_key="evidence-key", evidence_class="live")
+
+        failed_row = dict(rows[0])
+        failed_row["status"] = "failed"
+        with self.assertRaises(ValueError):
+            build_manifest([failed_row] + rows[1:], evidence_key="evidence-key", evidence_class="live")
+
 
 if __name__ == "__main__":
     unittest.main()

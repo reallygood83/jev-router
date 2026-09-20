@@ -73,21 +73,30 @@ class EvaluationTests(unittest.TestCase):
             "output_nonempty": True,
             "quality": 0.0,
         }]
-        rows[0]["evidence_signature"] = sign_record(rows[0], "evidence-key", "evidence_signature")
+        for arm, route_source in (("static-team", "static-team"), ("jev", "typesafe")):
+            row = dict(rows[0])
+            row["arm"] = arm
+            row["route_source"] = route_source
+            rows.append(row)
+        for row in rows:
+            row["evidence_signature"] = sign_record(row, "evidence-key", "evidence_signature")
         manifest = build_manifest(rows, evidence_key="evidence-key", evidence_class="live")
-        scores = [{
-            "task_id": "a",
-            "arm": "single",
-            "output_sha256": output_sha256,
-            "quality": 0.8,
-            "source": "human",
-            "scorer_id": "reviewer-01",
-            "execution_manifest_id": "manifest-1",
-            "prompt_sha256": rows[0]["prompt_sha256"],
-            "model_ids": rows[0]["model_ids"],
-            "model_fingerprints": rows[0]["model_fingerprints"],
-        }]
-        scores[0]["score_signature"] = sign_record(scores[0], "score-key", "score_signature")
+        scores = []
+        for row in rows:
+            score = {
+                "task_id": row["task_id"],
+                "arm": row["arm"],
+                "output_sha256": output_sha256,
+                "quality": 0.8,
+                "source": "human",
+                "scorer_id": "reviewer-01",
+                "execution_manifest_id": "manifest-1",
+                "prompt_sha256": row["prompt_sha256"],
+                "model_ids": row["model_ids"],
+                "model_fingerprints": row["model_fingerprints"],
+            }
+            score["score_signature"] = sign_record(score, "score-key", "score_signature")
+            scores.append(score)
 
         merged = merge_live_scores(
             rows,

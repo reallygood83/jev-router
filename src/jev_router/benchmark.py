@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import cast
 
 from .adapters import execute_plan
-from .evidence import sign_record
+from .evidence import sign_record, verify_record
 from .jev import JevClient, JevUnavailable, route_task
 from .registry import model_fingerprint
 
@@ -158,13 +158,28 @@ def build_manifest(rows, evidence_key="", evidence_class="live"):
     rows = list(rows)
     if not rows:
         raise ValueError("cannot build an empty execution manifest")
+    if evidence_class == "live" and not evidence_key:
+        raise ValueError("live execution manifests require JEV_EVIDENCE_KEY")
     manifest_id = rows[0].get("execution_manifest_id")
     if not isinstance(manifest_id, str) or not manifest_id:
         raise ValueError("execution rows require a manifest ID")
     records = []
+    arms_by_task = {}
     for row in rows:
         if row.get("execution_manifest_id") != manifest_id:
             raise ValueError("execution rows must share one manifest ID")
+        if evidence_class == "live":
+            if row.get("evidence_class") != "runtime_unscored" or row.get("executed") is not True:
+                raise ValueError("live execution manifest contains a non-executed row")
+            if row.get("execution_evidence_class") != "live" or row.get("status") != "ok" or row.get("output_nonempty") is not True:
+                raise ValueError("live execution manifest requires successful non-empty rows")
+            if not verify_record(row, evidence_key, "evidence_signature"):
+                raise ValueError("live execution row signature is invalid")
+        task_id = row.get("task_id")
+        arm = row.get("arm")
+        if not isinstance(task_id, str) or not isinstance(arm, str):
+            raise ValueError("execution manifest row key is invalid")
+        arms_by_task.setdefault(task_id, set()).add(arm)
         records.append(
             {
                 "task_id": row.get("task_id"),
@@ -174,6 +189,8 @@ def build_manifest(rows, evidence_key="", evidence_class="live"):
                 "evidence_signature": row.get("evidence_signature"),
             }
         )
+    if evidence_class == "live" and any(arms != {"single", "static-team", "jev"} for arms in arms_by_task.values()):
+        raise ValueError("live execution manifest requires all three benchmark arms per task")
     records.sort(key=lambda item: (str(item["task_id"]), str(item["arm"])))
     task_ids = sorted({str(row.get("task_id")) for row in rows})
     manifest = {

@@ -176,7 +176,11 @@ def parse_decision(response, candidates, threshold=0.6, health=None, health_ttl=
         workers = [worker]
     if isinstance(workers, str):
         workers = [workers]
-    workers = list(dict.fromkeys(workers))
+    if not all(isinstance(model_id, str) and model_id for model_id in workers):
+        raise ValueError("Jev worker IDs must be non-empty strings")
+    if len(set(workers)) != len(workers):
+        raise ValueError("Jev returned duplicate worker IDs")
+    workers = list(workers)
     if mode == "orchestration" and captain not in workers:
         workers.insert(0, captain)
     selected = [model_id for model_id in workers if model_id in allowed]

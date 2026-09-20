@@ -32,6 +32,7 @@ test_jev_cannot_select_outside_candidate_set (test_jev.JevTests) ... ok
 test_custom_type_safe_endpoint_is_rejected (test_jev.JevTests) ... ok
 test_jev_decision_selects_captain_and_workers (test_jev.JevTests) ... ok
 test_jev_orchestration_requires_two_models (test_jev.JevTests) ... ok
+test_jev_rejects_duplicate_workers (test_jev.JevTests) ... ok
 test_route_requires_health_evidence (test_jev.JevTests) ... ok
 test_payload_is_limited_to_approved_healthy_candidates (test_jev.JevTests) ... ok
 test_non_finite_confidence_is_rejected (test_policy.PolicyTests) ... ok
@@ -44,6 +45,6 @@ test_unapproved_models_are_excluded (test_registry.RegistryTests) ... ok
 test_registry_round_trip_preserves_approval_and_metadata (test_registry_storage.RegistryStorageTests) ... ok
 
 ----------------------------------------------------------------------
-Ran 44 tests in 0.022s
+Ran 45 tests in 0.025s
 
 OK
