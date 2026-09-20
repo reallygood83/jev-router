@@ -1,0 +1,11 @@
+test_paired_report_is_deterministic_and_correct (test_evaluation.EvaluationTests) ... ok
+test_failed_or_stale_models_are_excluded (test_health.HealthTests) ... ok
+test_orchestration_is_selected_when_lower_bound_beats_baseline (test_policy.PolicyTests) ... ok
+test_orchestration_requires_positive_conservative_delta (test_policy.PolicyTests) ... ok
+test_metadata_validation_rejects_negative_cost (test_registry.RegistryTests) ... ok
+test_unapproved_models_are_excluded (test_registry.RegistryTests) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.002s
+
+OK

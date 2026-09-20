@@ -1,0 +1,1 @@
+Compare two implementation approaches and return a concise recommendation.

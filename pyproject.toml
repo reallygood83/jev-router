@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jev-router"
+version = "0.1.0"
+description = "A thin Jev router for approved, healthy local AI models"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [{name = "reallygood83"}]
+dependencies = []
+
+[project.scripts]
+jev-router = "jev_router.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

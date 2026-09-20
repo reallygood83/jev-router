@@ -1,0 +1,44 @@
+{
+  "registry": [
+    {
+      "id": "fixture-cheap",
+      "provider": "codex",
+      "model": "gpt-5.6-luna",
+      "kind": "codex",
+      "approved": true,
+      "purpose": "fast simple work",
+      "quality_prior": 0.65,
+      "input_cost_per_1k": 0.1,
+      "output_cost_per_1k": 0.2
+    },
+    {
+      "id": "fixture-strong",
+      "provider": "claude",
+      "model": "opus",
+      "kind": "claude",
+      "approved": true,
+      "purpose": "hard reasoning",
+      "quality_prior": 0.9,
+      "input_cost_per_1k": 1.0,
+      "output_cost_per_1k": 2.0
+    },
+    {
+      "id": "fixture-unapproved",
+      "provider": "grok",
+      "model": "grok-4.6",
+      "kind": "grok",
+      "approved": false,
+      "purpose": "discovered only",
+      "quality_prior": 1.0
+    }
+  ],
+  "health": {
+    "fixture-cheap": {"ok": true, "checked_at": "now"},
+    "fixture-strong": {"ok": true, "checked_at": "now"},
+    "fixture-unapproved": {"ok": true, "checked_at": "now"}
+  },
+  "jev": {
+    "response_file": "tests/fixtures/jev-response.json",
+    "orchestrator_threshold": 0.6
+  }
+}

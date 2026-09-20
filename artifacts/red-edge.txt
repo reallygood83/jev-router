@@ -1,0 +1,116 @@
+test_missing_provider_inventory_is_not_fabricated (test_discovery.DiscoveryTests) ... ok
+test_provider_parsers_keep_real_models_and_ignore_headers (test_discovery.DiscoveryTests) ... FAIL
+test_invalid_weights_and_bootstrap_count_are_rejected (test_evaluation.EvaluationTests) ... FAIL
+test_paired_report_is_deterministic_and_correct (test_evaluation.EvaluationTests) ... ok
+test_failed_or_stale_models_are_excluded (test_health.HealthTests) ... ok
+test_missing_or_future_health_timestamp_is_excluded (test_health.HealthTests) ... FAIL
+test_command_mapping_keeps_model_arguments (test_health_probe.HealthProbeTests) ... FAIL
+test_empty_probe_output_is_not_healthy (test_health_probe.HealthProbeTests) ... FAIL
+test_non_finite_confidence_is_rejected (test_policy.PolicyTests) ... FAIL
+test_orchestration_is_selected_when_lower_bound_beats_baseline (test_policy.PolicyTests) ... ok
+test_orchestration_requires_positive_conservative_delta (test_policy.PolicyTests) ... ok
+test_registry (unittest.loader._FailedTest) ... ERROR
+test_registry_round_trip_preserves_approval_and_metadata (test_registry_storage.RegistryStorageTests) ... FAIL
+
+======================================================================
+ERROR: test_registry (unittest.loader._FailedTest)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_registry
+Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/loader.py", line 436, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/loader.py", line 377, in _get_module_from_name
+    __import__(name)
+  File "/Users/moon/jev-router/tests/test_registry.py", line 4, in <module>
+    from jev_router.registry import ModelSpec, eligible_models, validate_registry
+ImportError: cannot import name 'validate_registry' from 'jev_router.registry' (/Users/moon/jev-router/src/jev_router/registry.py)
+
+
+======================================================================
+FAIL: test_provider_parsers_keep_real_models_and_ignore_headers (test_discovery.DiscoveryTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/moon/jev-router/tests/test_discovery.py", line 12, in test_provider_parsers_keep_real_models_and_ignore_headers
+    self.assertEqual(grok, ["grok-4.6", "grok-4.5"])
+AssertionError: Lists differ: [] != ['grok-4.6', 'grok-4.5']
+
+Second list contains 2 additional elements.
+First extra element 0:
+'grok-4.6'
+
+- []
++ ['grok-4.6', 'grok-4.5']
+
+======================================================================
+FAIL: test_invalid_weights_and_bootstrap_count_are_rejected (test_evaluation.EvaluationTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/moon/jev-router/tests/test_evaluation.py", line 25, in test_invalid_weights_and_bootstrap_count_are_rejected
+    evaluate_rows([], weights={"lambda": -1.0})
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_missing_or_future_health_timestamp_is_excluded (test_health.HealthTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/moon/jev-router/tests/test_health.py", line 40, in test_missing_or_future_health_timestamp_is_excluded
+    self.assertEqual(future, [])
+AssertionError: Lists differ: [ModelSpec(id='model', provider='codex', m[186 chars]rue)] != []
+
+First list contains 1 additional elements.
+First extra element 0:
+ModelSpec(id='model', provider='codex', model='sol', approved=True, kind='codex', argv=(), purpose='', when='', context_tokens=0, input_cost_per_1k=0.0, output_cost_per_1k=0.0, latency_prior_ms=0.0, quality_prior=0.5, enabled=True)
+
+- [ModelSpec(id='model', provider='codex', model='sol', approved=True, kind='codex', argv=(), purpose='', when='', context_tokens=0, input_cost_per_1k=0.0, output_cost_per_1k=0.0, latency_prior_ms=0.0, quality_prior=0.5, enabled=True)]
++ []
+
+======================================================================
+FAIL: test_command_mapping_keeps_model_arguments (test_health_probe.HealthProbeTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/moon/jev-router/tests/test_health_probe.py", line 12, in test_command_mapping_keeps_model_arguments
+    self.assertEqual(command[:4], ["codex", "exec", "--skip-git-repo-check", "Reply with exactly: OK"])
+AssertionError: Lists differ: [] != ['codex', 'exec', '--skip-git-repo-check', 'Reply with exactly: OK']
+
+Second list contains 4 additional elements.
+First extra element 0:
+'codex'
+
+- []
++ ['codex', 'exec', '--skip-git-repo-check', 'Reply with exactly: OK']
+
+======================================================================
+FAIL: test_empty_probe_output_is_not_healthy (test_health_probe.HealthProbeTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/moon/jev-router/tests/test_health_probe.py", line 21, in test_empty_probe_output_is_not_healthy
+    self.assertIn("empty", result["reason"])
+AssertionError: 'empty' not found in 'stub probe'
+
+======================================================================
+FAIL: test_non_finite_confidence_is_rejected (test_policy.PolicyTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/moon/jev-router/tests/test_policy.py", line 36, in test_non_finite_confidence_is_rejected
+    choose_strategy([StrategyEstimate("single", mean=0.5, lcb95=math.nan)])
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_registry_round_trip_preserves_approval_and_metadata (test_registry_storage.RegistryStorageTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/moon/jev-router/tests/test_registry_storage.py", line 27, in test_registry_round_trip_preserves_approval_and_metadata
+    self.assertEqual(loaded, original)
+AssertionError: Lists differ: [] != [ModelSpec(id='codex-sol', provider='codex[222 chars]rue)]
+
+Second list contains 1 additional elements.
+First extra element 0:
+ModelSpec(id='codex-sol', provider='codex', model='gpt-5.6-sol', approved=True, kind='codex', argv=('-m', 'gpt-5.6-sol'), purpose='', when='', context_tokens=128000, input_cost_per_1k=0.0, output_cost_per_1k=0.0, latency_prior_ms=0.0, quality_prior=0.8, enabled=True)
+
+- []
++ [ModelSpec(id='codex-sol', provider='codex', model='gpt-5.6-sol', approved=True, kind='codex', argv=('-m', 'gpt-5.6-sol'), purpose='', when='', context_tokens=128000, input_cost_per_1k=0.0, output_cost_per_1k=0.0, latency_prior_ms=0.0, quality_prior=0.8, enabled=True)]
+
+----------------------------------------------------------------------
+Ran 13 tests in 0.005s
+
+FAILED (failures=7, errors=1)

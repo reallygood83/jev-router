@@ -1,0 +1,7 @@
+{
+  "codex": {"status": "ok", "source": "catalog", "count": 79, "sample": ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]},
+  "grok": {"status": "ok", "source": "config", "count": 84, "sample": ["openrouter/inception/mercury-2.5-preview", "openrouter/minimax/minimax-m2.7:free", "openrouter/minimax/minimax-m3:free"]},
+  "claude": {"status": "ok", "source": "aliases/settings", "count": 6, "sample": ["fable", "opus", "sonnet"]},
+  "cursor": {"status": "unavailable", "source": "command failed (exit 1)", "count": 0, "sample": []},
+  "kimi": {"status": "ok", "source": "config", "count": 4, "sample": ["kimi-for-coding", "kimi-for-coding-highspeed", "k3"]}
+}

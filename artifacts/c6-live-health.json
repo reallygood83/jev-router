@@ -1,0 +1,10 @@
+{
+  "status": "completed",
+  "models": {
+    "live-codex-sol": {"ok": false, "reason": "command failed (exit 1)"},
+    "live-claude-sonnet": {"ok": false, "reason": "timeout"},
+    "live-grok-46": {"ok": false, "reason": "timeout"}
+  },
+  "eligible_models": 0,
+  "note": "Provider output and credentials were not persisted."
+}

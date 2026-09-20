@@ -1,0 +1,11 @@
+{
+  "task_digest": "953f7db7acb8bc98",
+  "status": "ok",
+  "mode": "orchestration",
+  "worker_id": "fixture-cheap",
+  "captain_id": "fixture-strong",
+  "worker_ids": ["fixture-cheap", "fixture-strong"],
+  "confidence": 0.88,
+  "source": "fixture",
+  "candidate_ids": ["fixture-cheap", "fixture-strong"]
+}

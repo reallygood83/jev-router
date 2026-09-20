@@ -1,0 +1,16 @@
+{
+  "registry": [],
+  "health": {},
+  "jev": {
+    "endpoint": "https://api.typesafe.ai/v1/systemone",
+    "model": "jev-latest",
+    "orchestrator_threshold": 0.6
+  },
+  "policy": {
+    "lambda": 0.01,
+    "mu": 0.0001,
+    "nu": 1.0,
+    "delta": 0.02,
+    "min_pairs": 8
+  }
+}

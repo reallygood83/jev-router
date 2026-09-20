@@ -1,0 +1,7 @@
+{
+  "mode": "orchestration",
+  "captain_id": "fixture-strong",
+  "worker_ids": ["fixture-cheap", "fixture-strong"],
+  "confidence": 0.88,
+  "reason": "parallel review improves expected quality for this fixture task"
+}

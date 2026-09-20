@@ -1,0 +1,26 @@
+{
+  "health": {},
+  "jev": {},
+  "policy": {},
+  "registry": [
+    {
+      "approved": true,
+      "argv": [
+        "-m",
+        "gpt-5.6-sol"
+      ],
+      "context_tokens": 272000,
+      "enabled": true,
+      "id": "codex:gpt-5.6-sol",
+      "input_cost_per_1k": 0.0,
+      "kind": "codex",
+      "latency_prior_ms": 0.0,
+      "model": "gpt-5.6-sol",
+      "output_cost_per_1k": 0.0,
+      "provider": "codex",
+      "purpose": "Codex catalog model",
+      "quality_prior": 0.5,
+      "when": ""
+    }
+  ]
+}

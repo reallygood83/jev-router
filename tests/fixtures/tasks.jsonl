@@ -1,0 +1,2 @@
+{"task_id":"task-01","split":"holdout","prompt":"Assess this small design choice.","quality_by_arm":{"single":0.7,"static-team":0.78,"jev":0.86}}
+{"task_id":"task-02","split":"holdout","prompt":"Review this implementation approach.","quality_by_arm":{"single":0.7,"static-team":0.78,"jev":0.86}}

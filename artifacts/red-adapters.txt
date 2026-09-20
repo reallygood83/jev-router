@@ -1,0 +1,69 @@
+test_missing_provider_inventory_is_not_fabricated (test_discovery.DiscoveryTests) ... ok
+test_provider_parsers_keep_real_models_and_ignore_headers (test_discovery.DiscoveryTests) ... FAIL
+test_paired_report_is_deterministic_and_correct (test_evaluation.EvaluationTests) ... ok
+test_failed_or_stale_models_are_excluded (test_health.HealthTests) ... ok
+test_command_mapping_keeps_model_arguments (test_health_probe.HealthProbeTests) ... FAIL
+test_empty_probe_output_is_not_healthy (test_health_probe.HealthProbeTests) ... FAIL
+test_orchestration_is_selected_when_lower_bound_beats_baseline (test_policy.PolicyTests) ... ok
+test_orchestration_requires_positive_conservative_delta (test_policy.PolicyTests) ... ok
+test_metadata_validation_rejects_negative_cost (test_registry.RegistryTests) ... ok
+test_unapproved_models_are_excluded (test_registry.RegistryTests) ... ok
+test_registry_round_trip_preserves_approval_and_metadata (test_registry_storage.RegistryStorageTests) ... FAIL
+
+======================================================================
+FAIL: test_provider_parsers_keep_real_models_and_ignore_headers (test_discovery.DiscoveryTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/moon/jev-router/tests/test_discovery.py", line 12, in test_provider_parsers_keep_real_models_and_ignore_headers
+    self.assertEqual(grok, ["grok-4.6", "grok-4.5"])
+AssertionError: Lists differ: [] != ['grok-4.6', 'grok-4.5']
+
+Second list contains 2 additional elements.
+First extra element 0:
+'grok-4.6'
+
+- []
++ ['grok-4.6', 'grok-4.5']
+
+======================================================================
+FAIL: test_command_mapping_keeps_model_arguments (test_health_probe.HealthProbeTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/moon/jev-router/tests/test_health_probe.py", line 12, in test_command_mapping_keeps_model_arguments
+    self.assertEqual(command[:4], ["codex", "exec", "--skip-git-repo-check", "Reply with exactly: OK"])
+AssertionError: Lists differ: [] != ['codex', 'exec', '--skip-git-repo-check', 'Reply with exactly: OK']
+
+Second list contains 4 additional elements.
+First extra element 0:
+'codex'
+
+- []
++ ['codex', 'exec', '--skip-git-repo-check', 'Reply with exactly: OK']
+
+======================================================================
+FAIL: test_empty_probe_output_is_not_healthy (test_health_probe.HealthProbeTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/moon/jev-router/tests/test_health_probe.py", line 21, in test_empty_probe_output_is_not_healthy
+    self.assertIn("empty", result["reason"])
+AssertionError: 'empty' not found in 'stub probe'
+
+======================================================================
+FAIL: test_registry_round_trip_preserves_approval_and_metadata (test_registry_storage.RegistryStorageTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/moon/jev-router/tests/test_registry_storage.py", line 27, in test_registry_round_trip_preserves_approval_and_metadata
+    self.assertEqual(loaded, original)
+AssertionError: Lists differ: [] != [ModelSpec(id='codex-sol', provider='codex[222 chars]rue)]
+
+Second list contains 1 additional elements.
+First extra element 0:
+ModelSpec(id='codex-sol', provider='codex', model='gpt-5.6-sol', approved=True, kind='codex', argv=('-m', 'gpt-5.6-sol'), purpose='', when='', context_tokens=128000, input_cost_per_1k=0.0, output_cost_per_1k=0.0, latency_prior_ms=0.0, quality_prior=0.8, enabled=True)
+
+- []
++ [ModelSpec(id='codex-sol', provider='codex', model='gpt-5.6-sol', approved=True, kind='codex', argv=('-m', 'gpt-5.6-sol'), purpose='', when='', context_tokens=128000, input_cost_per_1k=0.0, output_cost_per_1k=0.0, latency_prior_ms=0.0, quality_prior=0.8, enabled=True)]
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.005s
+
+FAILED (failures=4)

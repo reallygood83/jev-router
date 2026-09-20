@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pyright/
+dist/
+build/
+*.egg-info/
+.venv/
+.DS_Store
+artifacts/live-*.json
+artifacts/*.tmp

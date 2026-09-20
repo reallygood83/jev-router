@@ -1,0 +1,71 @@
+test_paired_report_is_deterministic_and_correct (test_evaluation.EvaluationTests) ... FAIL
+test_failed_or_stale_models_are_excluded (test_health.HealthTests) ... FAIL
+test_orchestration_is_selected_when_lower_bound_beats_baseline (test_policy.PolicyTests) ... FAIL
+test_orchestration_requires_positive_conservative_delta (test_policy.PolicyTests) ... FAIL
+test_metadata_validation_rejects_negative_cost (test_registry.RegistryTests) ... ok
+test_unapproved_models_are_excluded (test_registry.RegistryTests) ... FAIL
+
+======================================================================
+FAIL: test_paired_report_is_deterministic_and_correct (test_evaluation.EvaluationTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/moon/jev-router/tests/test_evaluation.py", line 19, in test_paired_report_is_deterministic_and_correct
+    self.assertEqual(first["verdict"], "effective")
+AssertionError: 'insufficient_evidence' != 'effective'
+- insufficient_evidence
++ effective
+
+
+======================================================================
+FAIL: test_failed_or_stale_models_are_excluded (test_health.HealthTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/moon/jev-router/tests/test_health.py", line 26, in test_failed_or_stale_models_are_excluded
+    self.assertEqual([model.id for model in eligible], ["live"])
+AssertionError: Lists differ: [] != ['live']
+
+Second list contains 1 additional elements.
+First extra element 0:
+'live'
+
+- []
++ ['live']
+
+======================================================================
+FAIL: test_orchestration_is_selected_when_lower_bound_beats_baseline (test_policy.PolicyTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/moon/jev-router/tests/test_policy.py", line 30, in test_orchestration_is_selected_when_lower_bound_beats_baseline
+    self.assertEqual(decision.strategy, "jev")
+AssertionError: 'single' != 'jev'
+- single
++ jev
+
+
+======================================================================
+FAIL: test_orchestration_requires_positive_conservative_delta (test_policy.PolicyTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/moon/jev-router/tests/test_policy.py", line 18, in test_orchestration_requires_positive_conservative_delta
+    self.assertIn("conservative", decision.reason)
+AssertionError: 'conservative' not found in 'stub decision'
+
+======================================================================
+FAIL: test_unapproved_models_are_excluded (test_registry.RegistryTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/moon/jev-router/tests/test_registry.py", line 15, in test_unapproved_models_are_excluded
+    self.assertEqual([model.id for model in eligible], ["approved"])
+AssertionError: Lists differ: [] != ['approved']
+
+Second list contains 1 additional elements.
+First extra element 0:
+'approved'
+
+- []
++ ['approved']
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.001s
+
+FAILED (failures=5)
