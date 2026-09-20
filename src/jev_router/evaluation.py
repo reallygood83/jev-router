@@ -8,7 +8,7 @@ from statistics import mean
 from pathlib import Path
 
 from .evidence import verify_record
-from .registry import ModelSpec, model_fingerprint
+from .registry import ModelSpec, eligible_models, model_fingerprint
 
 _SCORE_SOURCES = {"human", "judge"}
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -145,7 +145,7 @@ def load_jsonl(path):
     return rows
 
 
-def merge_live_scores(rows, scores, evidence_key="", scorer_key="", scorer_id="", registry=None):
+def merge_live_scores(rows, scores, manifest=None, evidence_key="", scorer_key="", scorer_id="", registry=None, health=None, health_ttl=3600):
     evidence_key = evidence_key or os.environ.get("JEV_EVIDENCE_KEY", "").strip()
     scorer_key = scorer_key or os.environ.get("JEV_SCORER_KEY", "").strip()
     scorer_id = scorer_id or os.environ.get("JEV_SCORER_ID", "").strip()
@@ -157,11 +157,34 @@ def merge_live_scores(rows, scores, evidence_key="", scorer_key="", scorer_id=""
         raise ValueError("live evidence requires JEV_SCORER_ID")
     if registry is None:
         raise ValueError("live evidence requires the approved model registry")
+    if health is None:
+        raise ValueError("live evidence requires fresh model health records")
+    if not isinstance(manifest, dict) or not verify_record(manifest, evidence_key, "manifest_signature"):
+        raise ValueError("live evidence requires a valid execution manifest")
+    if manifest.get("execution_evidence_class") != "live":
+        raise ValueError("fixture execution cannot be live evidence")
     registered = {model.id: model for model in registry if isinstance(model, ModelSpec)}
+    healthy = {
+        model.id: model
+        for model in eligible_models(registry, health, ttl_seconds=health_ttl, require_fingerprint=True)
+    }
     benchmark_rows = list(rows)
     expected = {}
     manifest_ids = set()
+    manifest_records = manifest.get("row_records")
+    if not isinstance(manifest_records, list):
+        raise ValueError("execution manifest rows are missing")
+    manifest_by_key = {}
+    for item in manifest_records:
+        if not isinstance(item, dict) or not isinstance(item.get("task_id"), str) or not isinstance(item.get("arm"), str):
+            raise ValueError("execution manifest row key is invalid")
+        key = (item["task_id"], item["arm"])
+        if key in manifest_by_key:
+            raise ValueError("execution manifest contains duplicate rows")
+        manifest_by_key[key] = item
     for row in benchmark_rows:
+        if not isinstance(row.get("task_id"), str) or not isinstance(row.get("arm"), str):
+            raise ValueError("live evidence row key is invalid")
         key = (row.get("task_id"), row.get("arm"))
         output_sha256 = row.get("output_sha256")
         if row.get("evidence_class") != "runtime_unscored" or row.get("executed") is not True:
@@ -192,6 +215,8 @@ def merge_live_scores(rows, scores, evidence_key="", scorer_key="", scorer_id=""
             model = registered.get(model_id)
             if model is None or not model.approved or not model.enabled:
                 raise ValueError("live evidence contains a model outside the approved registry")
+            if model_id not in healthy:
+                raise ValueError("live evidence requires fresh health for every executed model")
             if fingerprints.get(model_id) != model_fingerprint(model):
                 raise ValueError("live evidence model fingerprint does not match the registry")
         if row.get("route_source") == "fixture":
@@ -200,16 +225,32 @@ def merge_live_scores(rows, scores, evidence_key="", scorer_key="", scorer_id=""
             raise ValueError("live Jev evidence requires a live TypeSafe route")
         if not verify_record(row, evidence_key, "evidence_signature"):
             raise ValueError("execution manifest signature is invalid")
+        manifest_row = manifest_by_key.get(key)
+        if not isinstance(manifest_row, dict):
+            raise ValueError("execution manifest is missing a benchmark row")
+        for name in ("prompt_sha256", "output_sha256", "evidence_signature"):
+            if manifest_row.get(name) != row.get(name):
+                raise ValueError("benchmark row is not bound to the execution manifest")
         if key in expected:
             raise ValueError(f"duplicate benchmark row for task {key[0]} arm {key[1]}")
         expected[key] = row
     if len(manifest_ids) != 1:
         raise ValueError("live evidence rows must share one execution manifest")
+    manifest_task_ids = manifest.get("task_ids")
+    expected_task_ids = {key[0] for key in expected}
+    if not isinstance(manifest_task_ids, list) or not all(isinstance(task_id, str) for task_id in manifest_task_ids) or set(manifest_task_ids) != expected_task_ids:
+        raise ValueError("execution manifest task set does not match benchmark rows")
+    if manifest.get("manifest_id") not in manifest_ids or set(manifest_by_key) != set(expected):
+        raise ValueError("execution manifest task and arm set does not match benchmark rows")
+    if manifest.get("row_count") != len(expected) or manifest.get("task_count") != len({key[0] for key in expected}):
+        raise ValueError("execution manifest counts do not match benchmark rows")
 
     scored = {}
     for score in scores:
         if not isinstance(score, dict):
             raise ValueError("each live score must be an object")
+        if not isinstance(score.get("task_id"), str) or not isinstance(score.get("arm"), str):
+            raise ValueError("live score row key is invalid")
         key = (score.get("task_id"), score.get("arm"))
         if key not in expected:
             raise ValueError(f"score does not match a benchmark row: {key[0]} / {key[1]}")

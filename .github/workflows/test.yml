@@ -15,5 +15,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - run: python -m pip install --no-deps .
+      - run: jev-router --help
       - run: python -m compileall -q src tests
       - run: PYTHONPATH=src:tests python -m unittest discover -s tests -p 'test_*.py' -v

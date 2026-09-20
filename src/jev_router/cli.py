@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Optional, cast
 
 from .adapters import execute_plan
-from .benchmark import run_benchmark, save_jsonl
+from .benchmark import build_manifest, run_benchmark, save_jsonl, save_manifest
 from .config import load_config, load_weights, models_from_config, put_models, save_config
 from .discovery import discover_local_models
 from .evaluation import evaluate_rows, load_jsonl, merge_live_scores, render_report
@@ -66,6 +66,10 @@ def _static_plan(models, mode, model_ids=None) -> dict[str, Any]:
         requested = list(model_ids)
         if not requested or (mode == "single" and len(requested) != 1) or (mode == "orchestration" and len(requested) < 2):
             return {"status": "blocked", "reason": "fixed baseline requires the configured model IDs"}
+        if not all(isinstance(model_id, str) and model_id for model_id in requested):
+            return {"status": "blocked", "reason": "fixed baseline contains invalid model IDs"}
+        if len(set(requested)) != len(requested):
+            return {"status": "blocked", "reason": "fixed baseline contains duplicate model IDs"}
         missing = [model_id for model_id in requested if model_id not in by_id]
         if missing:
             return {"status": "blocked", "reason": "fixed baseline is not eligible: " + ", ".join(missing)}
@@ -279,14 +283,20 @@ def cmd_evaluate(args):
         if args.evidence_class == "live":
             if not args.scores:
                 raise ValueError("live evidence requires --scores with external output-bound scores")
+            if not args.manifest:
+                raise ValueError("live evidence requires --manifest")
             evidence_config = load_config(args.config)
+            manifest = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
             rows = merge_live_scores(
                 rows,
                 load_jsonl(args.scores),
+                manifest=manifest,
                 evidence_key=os.environ.get("JEV_EVIDENCE_KEY", ""),
                 scorer_key=os.environ.get("JEV_SCORER_KEY", ""),
                 scorer_id=os.environ.get("JEV_SCORER_ID", ""),
                 registry=validate_registry(models_from_config(evidence_config)),
+                health=_health(evidence_config),
+                health_ttl=args.health_ttl,
             )
         weights = load_weights(args.weights)
         result = evaluate_rows(rows, weights, seed=args.seed, bootstrap_samples=args.bootstrap_samples)
@@ -340,11 +350,25 @@ def cmd_benchmark(args):
             require_fingerprint=require_fingerprint,
             evidence_class=config.get("evidence_class", "live"),
         )
+        manifest_path = None
+        if args.execute:
+            manifest_path = args.manifest_output
+            save_manifest(
+                manifest_path,
+                build_manifest(
+                    rows,
+                    evidence_key=os.environ.get("JEV_EVIDENCE_KEY", ""),
+                    evidence_class=config.get("evidence_class", "live"),
+                ),
+            )
     except (OSError, ValueError, JevUnavailable) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)}, ensure_ascii=False))
         return 2
     save_jsonl(args.benchmark_output, rows)
-    print(json.dumps({"status": "completed", "rows": len(rows), "output": args.benchmark_output, "executed": args.execute}, ensure_ascii=False, indent=2))
+    payload = {"status": "completed", "rows": len(rows), "output": args.benchmark_output, "executed": args.execute}
+    if manifest_path:
+        payload["manifest"] = manifest_path
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -359,6 +383,8 @@ def build_parser():
     parser.add_argument("--output")
     parser.add_argument("--tasks")
     parser.add_argument("--benchmark-output", default="artifacts/benchmark.jsonl")
+    parser.add_argument("--manifest-output", default="artifacts/live-manifest.json")
+    parser.add_argument("--manifest")
     parser.add_argument("--single-id")
     parser.add_argument("--team-ids")
     parser.add_argument("--scores")

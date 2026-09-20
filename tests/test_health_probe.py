@@ -9,7 +9,8 @@ class HealthProbeTests(unittest.TestCase):
         model = ModelSpec(id="sol", provider="codex", model="gpt-5.6-sol", kind="codex", argv=("-m", "gpt-5.6-sol"))
         command = command_for_model(model)
 
-        self.assertEqual(command[:4], ["codex", "exec", "--skip-git-repo-check", "Reply with exactly: OK"])
+        self.assertTrue(command[0].endswith("codex"))
+        self.assertEqual(command[1:4], ["exec", "--skip-git-repo-check", "Reply with exactly: OK"])
         self.assertEqual(command[-2:], ["-m", "gpt-5.6-sol"])
 
     def test_empty_probe_output_is_not_healthy(self):

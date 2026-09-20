@@ -3,7 +3,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .registry import ModelSpec, model_fingerprint
+from .registry import ModelSpec, model_fingerprint, provider_executable
 from .runtime import provider_environment
 
 
@@ -18,16 +18,17 @@ def _model_flag(model):
 
 def command_for_model(model):
     kind = (model.kind or model.provider).lower()
+    executable = provider_executable(model)
     if kind == "codex":
-        return ["codex", "exec", "--skip-git-repo-check", _PROMPT, *_model_flag(model), *model.argv]
+        return [executable, "exec", "--skip-git-repo-check", _PROMPT, *_model_flag(model), *model.argv]
     if kind == "grok":
-        return ["grok", "-p", _PROMPT, "--max-turns", "1", *_model_flag(model), *model.argv]
+        return [executable, "-p", _PROMPT, "--max-turns", "1", *_model_flag(model), *model.argv]
     if kind == "claude":
-        return ["claude", "--print", "--output-format", "text", _PROMPT, *_model_flag(model), *model.argv]
+        return [executable, "--print", "--output-format", "text", _PROMPT, *_model_flag(model), *model.argv]
     if kind in {"cursor", "agent"}:
-        return ["agent", "-p", _PROMPT, *_model_flag(model), *model.argv]
+        return [executable, "-p", _PROMPT, *_model_flag(model), *model.argv]
     if kind == "kimi":
-        return ["kimi", "--print", _PROMPT, *_model_flag(model), *model.argv]
+        return [executable, "-p", _PROMPT, *_model_flag(model), *model.argv]
     raise ValueError(f"unsupported provider kind: {kind}")
 
 

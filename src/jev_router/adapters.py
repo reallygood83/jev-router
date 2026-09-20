@@ -3,7 +3,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from .registry import eligible_models
+from .registry import eligible_models, provider_executable
 from .runtime import provider_environment
 
 
@@ -15,16 +15,17 @@ def _model_flag(model):
 
 def command_for_prompt(model, prompt):
     kind = (model.kind or model.provider).lower()
+    executable = provider_executable(model)
     if kind == "codex":
-        return ["codex", "exec", "--skip-git-repo-check", prompt, *_model_flag(model), *model.argv]
+        return [executable, "exec", "--skip-git-repo-check", prompt, *_model_flag(model), *model.argv]
     if kind == "grok":
-        return ["grok", "-p", prompt, *_model_flag(model), *model.argv]
+        return [executable, "-p", prompt, *_model_flag(model), *model.argv]
     if kind == "claude":
-        return ["claude", "--print", "--output-format", "text", prompt, *_model_flag(model), *model.argv]
+        return [executable, "--print", "--output-format", "text", prompt, *_model_flag(model), *model.argv]
     if kind in {"cursor", "agent"}:
-        return ["agent", "-p", prompt, *_model_flag(model), *model.argv]
+        return [executable, "-p", prompt, *_model_flag(model), *model.argv]
     if kind == "kimi":
-        return ["kimi", "--print", prompt, *_model_flag(model), *model.argv]
+        return [executable, "-p", prompt, *_model_flag(model), *model.argv]
     raise ValueError(f"unsupported provider kind: {kind}")
 
 
@@ -90,6 +91,8 @@ def execute_plan(plan, registry, prompt, timeout_seconds=120, runner=None, healt
         return {"ok": result["ok"], "mode": "single", "model_count": 1, "results": [{"model_id": model.id, **result}], "output": result["output"]}
 
     captain_id = plan["captain_id"]
+    if len(plan.get("worker_ids", [])) < 2 or len(set(plan.get("worker_ids", []))) != len(plan.get("worker_ids", [])):
+        return {"ok": False, "reason": "orchestration requires distinct models", "model_count": 0, "results": []}
     worker_ids = [model_id for model_id in plan["worker_ids"] if model_id != captain_id]
     with ThreadPoolExecutor(max_workers=max(1, min(6, len(worker_ids)))) as pool:
         futures = {

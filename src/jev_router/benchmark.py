@@ -62,7 +62,7 @@ def run_benchmark(
     evidence_class="live",
 ):
     by_id = {model.id: model for model in models}
-    if single_id not in by_id or len(team_ids) < 2 or any(model_id not in by_id for model_id in team_ids):
+    if single_id not in by_id or len(team_ids) < 2 or not all(isinstance(model_id, str) for model_id in team_ids) or len(set(team_ids)) != len(team_ids) or any(model_id not in by_id for model_id in team_ids):
         raise ValueError("benchmark references unknown registered model")
     rows = []
     rng = random.Random(seed)
@@ -70,7 +70,7 @@ def run_benchmark(
     for task in tasks:
         task_id = task.get("task_id")
         prompt = task.get("prompt")
-        if not task_id or not prompt:
+        if not isinstance(task_id, str) or not task_id or not prompt:
             raise ValueError("each benchmark task requires task_id and prompt")
         arms = ["single", "static-team", "jev"]
         rng.shuffle(arms)
@@ -152,3 +152,45 @@ def save_jsonl(path, rows):
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows), encoding="utf-8")
+
+
+def build_manifest(rows, evidence_key="", evidence_class="live"):
+    rows = list(rows)
+    if not rows:
+        raise ValueError("cannot build an empty execution manifest")
+    manifest_id = rows[0].get("execution_manifest_id")
+    if not isinstance(manifest_id, str) or not manifest_id:
+        raise ValueError("execution rows require a manifest ID")
+    records = []
+    for row in rows:
+        if row.get("execution_manifest_id") != manifest_id:
+            raise ValueError("execution rows must share one manifest ID")
+        records.append(
+            {
+                "task_id": row.get("task_id"),
+                "arm": row.get("arm"),
+                "prompt_sha256": row.get("prompt_sha256"),
+                "output_sha256": row.get("output_sha256"),
+                "evidence_signature": row.get("evidence_signature"),
+            }
+        )
+    records.sort(key=lambda item: (str(item["task_id"]), str(item["arm"])))
+    task_ids = sorted({str(row.get("task_id")) for row in rows})
+    manifest = {
+        "manifest_version": 1,
+        "manifest_id": manifest_id,
+        "execution_evidence_class": evidence_class,
+        "task_ids": task_ids,
+        "task_count": len(task_ids),
+        "row_count": len(records),
+        "row_records": records,
+    }
+    if evidence_key:
+        manifest["manifest_signature"] = sign_record(manifest, evidence_key, "manifest_signature")
+    return manifest
+
+
+def save_manifest(path, manifest):
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

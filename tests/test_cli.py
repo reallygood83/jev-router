@@ -46,6 +46,10 @@ class CliTests(unittest.TestCase):
         model = ModelSpec(id="only", provider="codex", model="only", approved=True)
         self.assertEqual(_static_plan([model], "orchestration")["status"], "blocked")
 
+    def test_orchestration_with_duplicate_models_is_blocked(self):
+        model = ModelSpec(id="same", provider="codex", model="same", approved=True)
+        self.assertEqual(_static_plan([model], "orchestration", ["same", "same"])["status"], "blocked")
+
     def test_fake_now_health_is_not_fresh_without_fixture_label(self):
         model = ModelSpec(id="live", provider="codex", model="sol", approved=True)
         config = {"health": {"live": {"ok": True, "checked_at": "now"}}}

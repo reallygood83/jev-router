@@ -1,7 +1,9 @@
 import hashlib
 import unittest
+from datetime import datetime, timedelta, timezone
 from typing import cast
 
+from jev_router.benchmark import build_manifest
 from jev_router.evaluation import evaluate_rows, merge_live_scores
 from jev_router.evidence import sign_record
 from jev_router.registry import ModelSpec, model_fingerprint
@@ -47,6 +49,13 @@ class EvaluationTests(unittest.TestCase):
     def test_live_score_is_bound_to_executed_output_hash(self):
         output_sha256 = hashlib.sha256(b"answer").hexdigest()
         model = ModelSpec(id="model-1", provider="codex", model="sol", approved=True)
+        health = {
+            "model-1": {
+                "ok": True,
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+                "model_fingerprint": model_fingerprint(model),
+            }
+        }
         rows = [{
             "task_id": "a",
             "arm": "single",
@@ -65,6 +74,7 @@ class EvaluationTests(unittest.TestCase):
             "quality": 0.0,
         }]
         rows[0]["evidence_signature"] = sign_record(rows[0], "evidence-key", "evidence_signature")
+        manifest = build_manifest(rows, evidence_key="evidence-key", evidence_class="live")
         scores = [{
             "task_id": "a",
             "arm": "single",
@@ -82,22 +92,54 @@ class EvaluationTests(unittest.TestCase):
         merged = merge_live_scores(
             rows,
             scores,
+            manifest=manifest,
             evidence_key="evidence-key",
             scorer_key="score-key",
             scorer_id="reviewer-01",
             registry=[model],
+            health=health,
         )
 
         self.assertEqual(merged[0]["quality"], 0.8)
         self.assertEqual(merged[0]["evidence_class"], "live")
         with self.assertRaises(ValueError):
             merge_live_scores(
-                rows,
-                [dict(scores[0], output_sha256="0" * 64)],
+                rows[:0],
+                [],
+                manifest=manifest,
                 evidence_key="evidence-key",
                 scorer_key="score-key",
                 scorer_id="reviewer-01",
                 registry=[model],
+                health=health,
+            )
+        with self.assertRaises(ValueError):
+            merge_live_scores(
+                rows,
+                scores,
+                manifest=manifest,
+                evidence_key="evidence-key",
+                scorer_key="score-key",
+                scorer_id="reviewer-01",
+                registry=[model],
+                health={
+                    "model-1": {
+                        "ok": True,
+                        "checked_at": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
+                        "model_fingerprint": model_fingerprint(model),
+                    }
+                },
+            )
+        with self.assertRaises(ValueError):
+            merge_live_scores(
+                rows,
+                [dict(scores[0], output_sha256="0" * 64)],
+                manifest=manifest,
+                evidence_key="evidence-key",
+                scorer_key="score-key",
+                scorer_id="reviewer-01",
+                registry=[model],
+                health=health,
             )
 
 

@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timezone
 
-from jev_router.benchmark import run_benchmark
+from jev_router.benchmark import build_manifest, run_benchmark
 from jev_router.jev import JevClient
 from jev_router.registry import ModelSpec, model_fingerprint
 
@@ -40,6 +40,9 @@ class BenchmarkTests(unittest.TestCase):
         self.assertTrue(all(len(row["output_sha256"]) == 64 for row in rows))
         self.assertTrue(all(len(row["evidence_signature"]) == 64 for row in rows))
         self.assertTrue(all(row["model_count"] == len(row["model_ids"]) for row in rows))
+        manifest = build_manifest(rows, evidence_key="evidence-key", evidence_class="live")
+        self.assertEqual(manifest["row_count"], 3)
+        self.assertEqual(len(str(manifest["manifest_signature"])), 64)
 
 
 if __name__ == "__main__":

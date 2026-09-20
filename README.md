@@ -55,13 +55,15 @@ The publish gate uses the holdout difference between Jev and the best baseline. 
 jev-router evaluate --input artifacts/benchmark.jsonl --weights config/weights.toml --output artifacts/effectiveness.md --evidence-class fixture
 
 # after registering and health-checking your real model pool
-jev-router benchmark --config ~/.config/jev-router/config.json --tasks /path/to/holdout.jsonl --execute --benchmark-output artifacts/benchmark.jsonl
-jev-router evaluate --input artifacts/benchmark.jsonl --weights config/weights.toml --scores artifacts/scores.jsonl --output artifacts/effectiveness.md --evidence-class live
+jev-router benchmark --config ~/.config/jev-router/config.json --tasks /path/to/holdout.jsonl --execute --benchmark-output artifacts/live-benchmark.jsonl --manifest-output artifacts/live-manifest.json
+jev-router evaluate --config ~/.config/jev-router/config.json --input artifacts/live-benchmark.jsonl --manifest artifacts/live-manifest.json --weights config/weights.toml --scores artifacts/live-scores.jsonl --output artifacts/live-effectiveness.md --evidence-class live
 ```
 
 Before a live run, provide two secrets and one signer identity outside the task and evidence files: `JEV_EVIDENCE_KEY` is used to sign the execution manifest, while `JEV_SCORER_KEY` and `JEV_SCORER_ID` are used by the independent scoring process to sign score records. The router never passes these values to provider subprocesses.
 
 An executed benchmark records runtime metrics, prompt/output hashes, model count, route source, and an HMAC-signed execution manifest ID, but never treats task-authored quality as evidence. A separate `scores.jsonl` must contain one independently supplied and signed record per task and arm, with the matching `output_sha256`, `quality` from 0 to 1, `source` set to `human` or `judge`, and a non-empty `scorer_id`. Live publication also rejects fixture-backed routes, blocked executions, missing model runs, mismatched model fingerprints, and stale health records.
+
+The live evaluator rechecks the configured health records and `--health-ttl` at publication time, so run `jev-router health` again if the benchmark has aged past the TTL.
 
 Prompts and provider output are not written to the JSONL evidence file. A score with a missing or mismatched output hash is rejected, so changing a task file or relabeling fixture quality cannot create a live result.
 

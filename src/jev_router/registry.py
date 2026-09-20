@@ -82,6 +82,29 @@ def eligible_models(
 
 
 def model_fingerprint(model: ModelSpec) -> str:
+    executable_name = {
+        "codex": "codex",
+        "grok": "grok",
+        "claude": "claude",
+        "cursor": "agent",
+        "agent": "agent",
+        "kimi": "kimi",
+    }.get((model.kind or model.provider).lower(), model.kind or model.provider)
+    executable = shutil.which(executable_name) or executable_name
+    payload = {
+        "id": model.id,
+        "provider": model.provider,
+        "model": model.model,
+        "kind": model.kind,
+        "argv": list(model.argv),
+        "executable": shutil.which(executable) or executable,
+        "executable_sha256": _executable_sha256(executable),
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def provider_executable(model: ModelSpec) -> str:
     executable = {
         "codex": "codex",
         "grok": "grok",
@@ -90,16 +113,21 @@ def model_fingerprint(model: ModelSpec) -> str:
         "agent": "agent",
         "kimi": "kimi",
     }.get((model.kind or model.provider).lower(), model.kind or model.provider)
-    payload = {
-        "id": model.id,
-        "provider": model.provider,
-        "model": model.model,
-        "kind": model.kind,
-        "argv": list(model.argv),
-        "executable": shutil.which(executable) or executable,
-    }
-    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
+    return shutil.which(executable) or executable
+
+
+def _executable_sha256(path: str) -> str:
+    target = Path(path)
+    if not target.is_file():
+        return ""
+    digest = hashlib.sha256()
+    try:
+        with target.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError:
+        return ""
+    return digest.hexdigest()
 
 
 def validate_registry(models: Iterable[ModelSpec]) -> list[ModelSpec]:
