@@ -444,62 +444,35 @@ class GateHandler(BaseHTTPRequestHandler):
         decision = {"status": "pass", "role": "-", "confidence": 0, "model_in": "", "model_out": ""}
         if patch:
             raw, decision = self._classify_and_patch(raw)
-        headers = _filter_headers(self.headers)
+        del decision
+        upstream = socket.create_connection(
+            (self.state.upstream_host, self.state.upstream_port),
+            timeout=10,
+        )
+        lines = [f"{self.command} {self.path} HTTP/1.1"]
+        lines.append(f"Host: {self.state.upstream_host}:{self.state.upstream_port}")
+        for key, value in self.headers.items():
+            lower = str(key).lower()
+            if lower in {"host", "content-length", "transfer-encoding", "connection"}:
+                continue
+            lines.append(f"{key}: {value}")
         if raw:
-            headers["Content-Length"] = str(len(raw))
-        conn = HTTPConnection(self.state.upstream_host, self.state.upstream_port, timeout=self.timeout)
+            lines.append(f"Content-Length: {len(raw)}")
+        lines.append("Connection: close")
+        upstream.sendall(("\r\n".join(lines) + "\r\n\r\n").encode("iso-8859-1") + (raw or b""))
+        client = self.connection
+        self.close_connection = True
         try:
-            conn.request(self.command, self.path, body=raw or None, headers=headers)
-            up = conn.getresponse()
-            self.send_response(up.status, up.reason)
-            self._cors()
-            for key, value in up.getheaders():
-                lower = key.lower()
-                if lower in HOP_BY_HOP or lower.startswith("access-control-"):
-                    continue
-                if lower == "content-length":
-                    continue
-                self.send_header(key, value)
-            self.send_header("X-Jev-Gate-Version", GATE_VERSION)
-            self.send_header("X-Jev-Gate", decision.get("status") or "pass")
-            self.send_header("X-Jev-Role", str(decision.get("role") or "-"))
-            self.send_header("X-Jev-Confidence", f"{float(decision.get('confidence') or 0):.2f}")
-            self.send_header("X-Jev-Model-In", str(decision.get("model_in") or ""))
-            self.send_header("X-Jev-Model-Out", str(decision.get("model_out") or ""))
-            up_len = up.getheader("Content-Length")
-            self.send_header("Connection", "close")
-            self.close_connection = True
-            if up_len:
-                self.send_header("Content-Length", up_len)
-            self.end_headers()
-            if up_len:
-                remaining = int(up_len)
-                while remaining > 0:
-                    chunk = up.read(min(8192, remaining))
-                    if not chunk:
-                        break
-                    self.wfile.write(chunk)
-                    remaining -= len(chunk)
-            else:
-                while True:
-                    chunk = up.read(8192)
-                    if not chunk:
-                        break
-                    self.wfile.write(chunk)
-                    self.wfile.flush()
-            self.wfile.flush()
-        except Exception as exc:
-            if not self.wfile.closed:
-                try:
-                    self.send_response(502)
-                    self._cors()
-                    self.send_header("Content-Type", "application/json")
-                    self.end_headers()
-                    self.wfile.write(json.dumps({"error": "upstream failed", "detail": str(exc)}).encode("utf-8"))
-                except Exception:
-                    pass
+            while True:
+                data = upstream.recv(65536)
+                if not data:
+                    break
+                client.sendall(data)
         finally:
-            conn.close()
+            try:
+                upstream.close()
+            except OSError:
+                pass
 
 
 def make_server(host="127.0.0.1", port=10115, upstream="http://127.0.0.1:10100", pack_path=None):
