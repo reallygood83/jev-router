@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from http.client import HTTPConnection
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import ClassVar, cast
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
@@ -50,6 +51,7 @@ class GateState:
         self.sticky = {}
         self.events = deque(maxlen=20)
         self.catalog = set()
+        self.reasoning_support = {}
 
     def reload_pack(self):
         self.pack = load_pack(self.pack_path)
@@ -63,6 +65,7 @@ class GateState:
             "confidence": round(float(decision.get("confidence") or 0), 2),
             "model_in": decision.get("model_in"),
             "model_out": decision.get("model_out"),
+            "reasoning_effort": decision.get("reasoning_effort") or "",
         }
         self.events.appendleft(item)
         return item
@@ -80,11 +83,11 @@ def _filter_headers(headers):
 
 class GateHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
-    state: GateState
+    state: ClassVar[GateState]
     timeout = 600
 
-    def log_message(self, fmt, *args):
-        print("[jev-gate] " + (fmt % args))
+    def log_message(self, format, *args):
+        print("[jev-gate] " + (format % args))
 
     def _cors(self):
         origin = self.headers.get("Origin") or "http://127.0.0.1:10115"
@@ -217,7 +220,19 @@ class GateHandler(BaseHTTPRequestHandler):
         try:
             with urlopen(Request(f"http://{self.state.upstream_host}:{self.state.upstream_port}/v1/models"), timeout=3) as res:
                 payload = json.loads(res.read().decode("utf-8"))
-            self.state.catalog = {item.get("id") for item in payload.get("data") or [] if isinstance(item, dict) and item.get("id")}
+            items = payload.get("data") or []
+            self.state.catalog = {str(item.get("id")) for item in items if isinstance(item, dict) and item.get("id")}
+            support = {}
+            for item in items:
+                if not isinstance(item, dict) or not item.get("id"):
+                    continue
+                value = item.get("supports_reasoning_effort")
+                capabilities = item.get("capabilities")
+                if value is None and isinstance(capabilities, dict):
+                    value = capabilities.get("supports_reasoning")
+                if isinstance(value, bool):
+                    support[str(item["id"])] = value
+            self.state.reasoning_support = support
         except Exception:
             pass
 
@@ -237,7 +252,7 @@ class GateHandler(BaseHTTPRequestHandler):
         else:
             sticky, sticky_effort = str(stored or ""), ""
         task = extract_task(body)
-        max_chars = int(pack.get("max_task_chars") or 2000)
+        max_chars = int(str(pack.get("max_task_chars") or 2000))
         task = task[:max_chars]
         error = ""
         classification = None
@@ -263,6 +278,9 @@ class GateHandler(BaseHTTPRequestHandler):
                 decision["model_out"] = incoming
                 decision["reason"] = "rewrite target not in catalog"
             else:
+                if decision.get("reasoning_effort") and self.state.reasoning_support.get(str(decision["model_out"])) is False:
+                    decision["reasoning_effort"] = ""
+                    decision["reason"] += "; target does not advertise reasoning support"
                 raw = self._apply_decision(body, decision)
                 if key:
                     self.state.sticky[key] = {
@@ -278,9 +296,15 @@ class GateHandler(BaseHTTPRequestHandler):
         body["model"] = decision["model_out"]
         effort = str(decision.get("reasoning_effort") or "").strip()
         if effort:
-            body["reasoning_effort"] = effort
-            if isinstance(body.get("reasoning"), dict):
-                body["reasoning"]["effort"] = effort
+            if self._route() == "/v1/responses":
+                reasoning = body.get("reasoning")
+                if not isinstance(reasoning, dict):
+                    reasoning = {}
+                    body["reasoning"] = reasoning
+                reasoning["effort"] = effort
+                body.pop("reasoning_effort", None)
+            else:
+                body["reasoning_effort"] = effort
         return json.dumps(body, ensure_ascii=False).encode("utf-8")
 
     def _save_secrets(self):
@@ -313,8 +337,7 @@ class GateHandler(BaseHTTPRequestHandler):
                 result = install_skill()
         except Exception as exc:
             return self._json(500, {"ok": False, "error": str(exc)})
-        result["status"] = install_status()
-        return self._json(200, result)
+        return self._json(200, {**result, "status": install_status()})
 
     def _autostart(self):
         length = int(self.headers.get("Content-Length") or 0)
@@ -324,7 +347,9 @@ class GateHandler(BaseHTTPRequestHandler):
         except ValueError:
             payload = {}
         enabled = bool((payload or {}).get("enabled"))
-        host, port = self.server.server_address[:2]
+        server = cast(ThreadingHTTPServer, self.server)
+        address = server.server_address
+        host, port = str(address[0]), int(address[1])
         upstream = f"http://{self.state.upstream_host}:{self.state.upstream_port}"
         try:
             if enabled:
@@ -441,10 +466,8 @@ class GateHandler(BaseHTTPRequestHandler):
 
     def _proxy(self, patch=False):
         raw = self._read_body() if self.command in {"POST", "PUT", "PATCH"} else b""
-        decision = {"status": "pass", "role": "-", "confidence": 0, "model_in": "", "model_out": ""}
         if patch:
-            raw, decision = self._classify_and_patch(raw)
-        del decision
+            raw, _decision = self._classify_and_patch(raw)
         upstream = socket.create_connection(
             (self.state.upstream_host, self.state.upstream_port),
             timeout=10,

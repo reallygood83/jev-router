@@ -14,6 +14,7 @@
     h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em; margin: 0 0 12px; color: #6a635a; }
     label { display: block; font-size: 13px; margin: 10px 0 4px; }
     select, input[type="number"], input[type="password"] { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+    select:disabled { background: #eeeae3; color: #777; }
     .row { display: grid; grid-template-columns: 1fr 160px; gap: 12px; }
     .row3 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     button { border: 0; background: #1c1916; color: #fff; padding: 9px 14px; border-radius: 8px; cursor: pointer; }
@@ -22,6 +23,13 @@
     .status { font-size: 13px; }
     .ok { color: var(--ok); }
     .bad { color: var(--bad); }
+    .progress { float: right; color: var(--ink); }
+    .checklist { margin: 0; padding-left: 22px; }
+    .checklist li { margin: 7px 0; }
+    .checklist li.ok::marker { color: var(--ok); }
+    .checklist li.bad::marker { color: var(--bad); }
+    .probes { margin-top: 10px; }
+    .probe { margin: 5px 0; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
     th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); word-break: break-all; }
     .hint { font-size: 12px; color: #6a635a; margin-top: 8px; }
@@ -32,6 +40,21 @@
   <h1>Jev Gate</h1>
   <p id="stale" class="lead bad" style="display:none"></p>
   <p class="lead">OpenCodex 앞에서 역할만 고릅니다. Jev는 모델 이름을 보지 않습니다. home일 때만 model과 추론 강도를 바꿉니다.</p>
+  <section>
+    <h2>빠른 시작 <span id="progress" class="progress">0/4</span></h2>
+    <ol class="checklist">
+      <li id="stepOpenCodex">OpenCodex 연결 확인</li>
+      <li id="stepKey">TypeSafe API 키 저장</li>
+      <li id="stepPack">home과 역할 모델 저장</li>
+      <li id="stepProbe">역할 3개 실제 호출 성공</li>
+    </ol>
+    <div class="actions">
+      <button type="button" id="runChecks">역할 3개 실제 테스트</button>
+      <button type="button" class="secondary" id="copyBaseUrl">Codex Base URL 복사</button>
+    </div>
+    <p id="probeMsg" class="hint">테스트는 implement, research, write 모델을 각각 한 번 호출하며 소량의 토큰을 사용합니다.</p>
+    <div id="probeResults" class="probes" aria-live="polite"></div>
+  </section>
   <section>
     <h2>연결</h2>
     <p id="health" class="status">확인 중…</p>
@@ -111,6 +134,26 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const EFFORTS = ["", "low", "medium", "high", "xhigh", "max", "ultra"];
+let currentPack = {};
+let currentStatus = {};
+let currentSecrets = {};
+let routeTestsPassed = false;
+let modelCatalog = [];
+function setStep(id, ok, text) {
+  const item = $(id);
+  item.className = ok ? "ok" : "bad";
+  item.textContent = (ok ? "완료 · " : "필요 · ") + text;
+}
+function updateProgress() {
+  const roles = currentPack.roles || {};
+  const packReady = Boolean(currentPack.home_model) && ["implement", "research", "write"].every(role => roles[role] && roles[role].model);
+  const steps = [Boolean(currentStatus.opencodex_ok), Boolean(currentSecrets.jev_key_set), packReady, routeTestsPassed];
+  setStep("stepOpenCodex", steps[0], steps[0] ? `OpenCodex ${currentStatus.opencodex_version || "연결됨"}` : "OpenCodex :10100 실행");
+  setStep("stepKey", steps[1], steps[1] ? "TypeSafe API 키 설정됨" : "TypeSafe API 키 저장");
+  setStep("stepPack", steps[2], steps[2] ? "home과 역할 모델 준비됨" : "home, implement, research, write 선택 후 팩 저장");
+  setStep("stepProbe", steps[3], steps[3] ? "역할별 모델 변경과 생성 응답 확인됨" : "역할 3개 실제 테스트 실행");
+  $("progress").textContent = `${steps.filter(Boolean).length}/4`;
+}
 function optionList(models, selected, emptyLabel) {
   const opts = [`<option value="">${emptyLabel}</option>`];
   for (const m of models) {
@@ -122,21 +165,34 @@ function optionList(models, selected, emptyLabel) {
 function effortList(selected) {
   return EFFORTS.map(v => `<option value="${v}" ${v === (selected || "") ? "selected" : ""}>${v || "(기본)"}</option>`).join("");
 }
+function updateEffortControl(role) {
+  const model = modelCatalog.find(item => String(item.id || item) === $(role).value);
+  const unsupported = model && model.capabilities && model.capabilities.supports_reasoning === false;
+  const control = $(role + "Effort");
+  if (unsupported) control.value = "";
+  control.disabled = Boolean(unsupported);
+  control.title = unsupported ? "이 모델은 카탈로그에서 추론 강도를 지원하지 않습니다." : "";
+}
 async function loadPackForm() {
   const [models, pack] = await Promise.all([
     fetch("/v1/models").then(r => r.json()).catch(() => ({ data: [] })),
     fetch("/api/pack").then(r => r.json()),
   ]);
+  currentPack = pack;
   const list = models.data || [];
+  modelCatalog = list;
   $("home").innerHTML = optionList(list, pack.home_model, "(home 선택)");
   for (const role of ["implement", "research", "write"]) {
     const current = (pack.roles && pack.roles[role] && pack.roles[role].model) || "";
     const effort = (pack.roles && pack.roles[role] && pack.roles[role].reasoning_effort) || "";
     $(role).innerHTML = optionList(list, current, "(비움)");
     $(role + "Effort").innerHTML = effortList(effort);
+    $(role).onchange = () => updateEffortControl(role);
+    updateEffortControl(role);
   }
   $("floor").value = pack.confidence_floor ?? 0.6;
   $("enabled").value = pack.enabled === false ? "false" : "true";
+  updateProgress();
 }
 async function loadMeta() {
   const [status, events, secretsRes, installRes] = await Promise.all([
@@ -146,6 +202,8 @@ async function loadMeta() {
     fetch("/api/install").then(r => r.json()).catch(() => ({})),
   ]);
   const secrets = await secretsRes.json().catch(() => ({}));
+  currentStatus = status;
+  currentSecrets = secrets;
   const stale = $("stale");
   if (secretsRes.status === 401 || secrets.error || !status.gate_version) {
     stale.style.display = "block";
@@ -170,6 +228,7 @@ async function loadMeta() {
   if (installRes.mcp_codex) bits.push("Codex MCP");
   if (installRes.mcp_claude) bits.push("Claude MCP");
   $("installStatus").textContent = bits.length ? ("설치됨: " + bits.join(", ")) : "아직 설치 안 됨";
+  updateProgress();
 }
 $("reload").onclick = () => { loadPackForm(); loadMeta(); };
 $("save").onclick = async () => {
@@ -185,6 +244,11 @@ $("save").onclick = async () => {
   const res = await fetch("/api/pack", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(pack) });
   const body = await res.json().catch(() => ({}));
   $("saveMsg").textContent = res.ok ? "팩 저장됨" : ("저장 실패 " + res.status + " " + (body.error || ""));
+  if (res.ok) {
+    currentPack = body;
+    routeTestsPassed = false;
+    updateProgress();
+  }
 };
 $("saveKey").onclick = async () => {
   const res = await fetch("/api/secrets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ typesafe_api_key: $("apiKey").value }) });
@@ -214,6 +278,77 @@ async function setAuto(enabled) {
 }
 $("autoOn").onclick = () => setAuto(true);
 $("autoOff").onclick = () => setAuto(false);
+$("copyBaseUrl").onclick = async () => {
+  const baseUrl = location.origin + "/v1";
+  try {
+    await navigator.clipboard.writeText(baseUrl);
+    $("probeMsg").textContent = `복사됨: ${baseUrl}`;
+  } catch (_error) {
+    $("probeMsg").textContent = `Codex openai_base_url: ${baseUrl}`;
+  }
+};
+$("runChecks").onclick = async () => {
+  const button = $("runChecks");
+  const roles = currentPack.roles || {};
+  if (!currentPack.home_model || !["implement", "research", "write"].every(role => roles[role] && roles[role].model)) {
+    $("probeMsg").textContent = "먼저 home과 역할 모델을 선택하고 팩을 저장하세요.";
+    return;
+  }
+  const probes = [
+    { role: "implement", expected: "JEV_IMPLEMENT_OK", prompt: "This is a routing test only. Classify the quoted task as implementation: \"Implement a small code change in the repository.\" Do not call tools or modify files. Reply exactly JEV_IMPLEMENT_OK." },
+    { role: "research", expected: "JEV_RESEARCH_OK", prompt: "Research current API documentation and report one fact. Reply exactly JEV_RESEARCH_OK." },
+    { role: "write", expected: "JEV_WRITE_OK", prompt: "A user wants you to draft and edit Korean product prose. This is only a routing check; do not draft the prose. Reply exactly JEV_WRITE_OK." },
+  ];
+  button.disabled = true;
+  routeTestsPassed = false;
+  $("probeResults").replaceChildren();
+  $("probeMsg").textContent = "실제 모델 호출 중…";
+  let passed = 0;
+  for (const probe of probes) {
+    const line = document.createElement("p");
+    line.className = "probe";
+    line.textContent = `${probe.role}: 호출 중…`;
+    $("probeResults").appendChild(line);
+    try {
+      const response = await fetch("/v1/responses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: currentPack.home_model,
+          input: [{ role: "user", content: [{ type: "input_text", text: probe.prompt }] }],
+          max_output_tokens: 128,
+          stream: true,
+          store: false,
+        }),
+      });
+      const stream = await response.text();
+      let role = response.headers.get("X-Jev-Role") || "-";
+      let modelIn = response.headers.get("X-Jev-Model-In") || currentPack.home_model;
+      let modelOut = response.headers.get("X-Jev-Model-Out") || "-";
+      if (role === "-" || modelOut === "-") {
+        const eventData = await fetch("/api/events").then(result => result.json()).catch(() => ({ events: [] }));
+        const latest = (eventData.events || [])[0] || {};
+        role = latest.role || role;
+        modelIn = latest.model_in || modelIn;
+        modelOut = latest.model_out || modelOut;
+      }
+      const completed = stream.includes('"type":"response.completed"') && !stream.includes('"type":"error"');
+      const ok = response.ok && role === probe.role && modelOut === roles[probe.role].model && completed && stream.includes(probe.expected);
+      if (ok) passed += 1;
+      const error = stream.match(/"message":"([^"]+)"/);
+      line.className = `probe ${ok ? "ok" : "bad"}`;
+      line.textContent = `${probe.role}: ${modelIn} → ${modelOut} · ${ok ? "성공" : "실패"}${error ? ` · ${error[1]}` : ""}`;
+    } catch (error) {
+      line.className = "probe bad";
+      line.textContent = `${probe.role}: 연결 실패 · ${error.message || error}`;
+    }
+  }
+  routeTestsPassed = passed === probes.length;
+  $("probeMsg").textContent = routeTestsPassed ? "온보딩 완료: 세 역할 모두 실제 생성에 성공했습니다." : `${passed}/3 성공. 실패한 역할의 모델 또는 추론 강도를 확인하세요.`;
+  button.disabled = false;
+  updateProgress();
+  loadMeta();
+};
 loadPackForm();
 loadMeta();
 setInterval(loadMeta, 4000);

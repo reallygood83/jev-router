@@ -1,3 +1,3 @@
 """Thin Jev layer in front of OpenCodex."""
 
-GATE_VERSION = "0.3.3"
+GATE_VERSION = "0.3.4"

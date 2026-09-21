@@ -23,14 +23,24 @@ python3 -m pip install -e .
 jev-gate
 ```
 
-Then:
+### First run: get to 4/4
 
-1. Open http://127.0.0.1:10115/
-2. Save a TypeSafe API key (stored in `~/.config/jev-gate/secrets.json`, mode 600, never shown again)
-3. Set home + role models from the live OpenCodex catalog
-4. Point Codex / any OpenAI-compatible client at `http://127.0.0.1:10115/v1`
-5. Leave the picker on **home**. Search prompts can rewrite to research; code prompts to implement.
-6. Click **상시 실행 켜기** so the gate starts at login and stays up if it crashes.
+1. Open the Jev dashboard at http://127.0.0.1:10115/ — not `/v1/responses`.
+2. Save a TypeSafe API key. It is stored in `~/.config/jev-gate/secrets.json` with mode 600 and is never shown again.
+3. Select home, implement, research, and write models, then click **팩 저장**.
+4. Click **역할 3개 실제 테스트**. The dashboard makes one small generation call per role and shows the selected model and any upstream error.
+5. Click **Codex Base URL 복사** and set Codex / any OpenAI-compatible client to `http://127.0.0.1:10115/v1`.
+6. Leave the client picker on **home**, turn on **상시 실행**, and restart the client once.
+
+The progress indicator reaches **4/4** only after OpenCodex, the TypeSafe key, the role pack, and all three live generation probes succeed. Model probes use a small number of tokens.
+
+Expected live routing:
+
+```text
+implement: home -> configured implement model
+research:  home -> configured research model
+write:     home -> configured write model
+```
 
 Without a key, the gate is a pure proxy (`error-pass`). If OpenCodex is down, the client sees the upstream error.
 
@@ -61,6 +71,10 @@ Fixture numbers in `artifacts/` test the evaluator. They are not a live quality 
 MIT
 
 ## Troubleshooting
+
+**Opening `/v1/responses` in a browser says it cannot connect.** That URL is an API/WebSocket endpoint, not a page. A normal browser GET receives `426 Upgrade Required` by design. Open http://127.0.0.1:10115/ for Jev setup, and use `/v1` only as the client Base URL.
+
+**The dashboard route test shows `Unsupported parameter: reasoning_effort`.** Upgrade to 0.3.4+ and restart Jev Gate. Responses API requests must send effort as `reasoning.effort`; chat-completions requests use top-level `reasoning_effort`.
 
 **Codex App shows `Unknown endpoint: GET /v1/responses` or reconnecting.** Codex talks to OpenCodex over **websocket** (`ws://127.0.0.1:10115/v1/responses`). An old gate treated that as a plain HTTP GET and OpenCodex returned 404. Use 0.3.3+ so the gate tunnels the websocket. Then `git pull`, restart `jev-gate --port 10115`, and Cmd+Q Codex.
 
