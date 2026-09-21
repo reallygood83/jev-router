@@ -129,13 +129,6 @@ class GateHandler(BaseHTTPRequestHandler):
             return self._json(404, {"error": "unknown api"})
         if self._wants_websocket(path):
             return self._websocket_tunnel()
-        if path.rstrip("/") == "/v1/responses":
-            self.send_response(426, "Upgrade Required")
-            self.send_header("Upgrade", "websocket")
-            self.send_header("Connection", "Upgrade")
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-            return
         return self._proxy()
 
     def do_PUT(self):
