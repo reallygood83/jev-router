@@ -13,12 +13,16 @@ from urllib.request import Request, urlopen
 from jev_router.jev import JevUnavailable
 
 from . import GATE_VERSION
+from .autostart import disable as autostart_disable
+from .autostart import enable as autostart_enable
+from .autostart import status as autostart_status
 from .classify import classify_task
 from .decide import decide
 from .extract import extract_task, thread_key
 from .install import install_mcp, install_skill, install_status
 from .pack import load_pack, save_pack
 from .secrets import key_is_set, save_key
+from .ws import encode_frame, pop_frame, rewrite_model_payload
 
 
 HOP_BY_HOP = {
@@ -83,12 +87,12 @@ class GateHandler(BaseHTTPRequestHandler):
         print("[jev-gate] " + (fmt % args))
 
     def _cors(self):
-        origin = self.headers.get("Origin") or "http://127.0.0.1:10101"
+        origin = self.headers.get("Origin") or "http://127.0.0.1:10115"
         if origin.startswith("http://127.0.0.1") or origin.startswith("http://localhost"):
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Access-Control-Allow-Headers", self.headers.get("Access-Control-Request-Headers") or "*")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-            self.send_header("Access-Control-Expose-Headers", "X-Jev-Gate, X-Jev-Role, X-Jev-Confidence, X-Jev-Model-In, X-Jev-Model-Out")
+            self.send_header("Access-Control-Expose-Headers", "X-Jev-Gate, X-Jev-Gate-Version, X-Jev-Role, X-Jev-Confidence, X-Jev-Model-In, X-Jev-Model-Out")
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -122,6 +126,13 @@ class GateHandler(BaseHTTPRequestHandler):
             return self._json(404, {"error": "unknown api"})
         if self._wants_websocket(path):
             return self._websocket_tunnel()
+        if path.rstrip("/") == "/v1/responses":
+            self.send_response(426, "Upgrade Required")
+            self.send_header("Upgrade", "websocket")
+            self.send_header("Connection", "Upgrade")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         return self._proxy()
 
     def do_PUT(self):
@@ -155,6 +166,8 @@ class GateHandler(BaseHTTPRequestHandler):
             return self._autostart()
         if path.startswith("/api/"):
             return self._json(404, {"error": "unknown api"})
+        if self._wants_websocket(path):
+            return self._websocket_tunnel()
         if path in PATCH_PATHS:
             return self._proxy(patch=True)
         return self._proxy()
@@ -437,22 +450,23 @@ class GateHandler(BaseHTTPRequestHandler):
         conn = HTTPConnection(self.state.upstream_host, self.state.upstream_port, timeout=self.timeout)
         try:
             conn.request(self.command, self.path, body=raw or None, headers=headers)
-            upstream = conn.getresponse()
-            self.send_response(upstream.status, upstream.reason)
+            up = conn.getresponse()
+            self.send_response(up.status, up.reason)
             self._cors()
-            for key, value in upstream.getheaders():
+            for key, value in up.getheaders():
                 lower = key.lower()
                 if lower in HOP_BY_HOP or lower.startswith("access-control-"):
                     continue
                 if lower == "content-length":
                     continue
                 self.send_header(key, value)
+            self.send_header("X-Jev-Gate-Version", GATE_VERSION)
             self.send_header("X-Jev-Gate", decision.get("status") or "pass")
             self.send_header("X-Jev-Role", str(decision.get("role") or "-"))
             self.send_header("X-Jev-Confidence", f"{float(decision.get('confidence') or 0):.2f}")
             self.send_header("X-Jev-Model-In", str(decision.get("model_in") or ""))
             self.send_header("X-Jev-Model-Out", str(decision.get("model_out") or ""))
-            up_len = upstream.getheader("Content-Length")
+            up_len = up.getheader("Content-Length")
             self.send_header("Connection", "close")
             self.close_connection = True
             if up_len:
@@ -461,14 +475,14 @@ class GateHandler(BaseHTTPRequestHandler):
             if up_len:
                 remaining = int(up_len)
                 while remaining > 0:
-                    chunk = upstream.read(min(8192, remaining))
+                    chunk = up.read(min(8192, remaining))
                     if not chunk:
                         break
                     self.wfile.write(chunk)
                     remaining -= len(chunk)
             else:
                 while True:
-                    chunk = upstream.read(8192)
+                    chunk = up.read(8192)
                     if not chunk:
                         break
                     self.wfile.write(chunk)
@@ -488,7 +502,7 @@ class GateHandler(BaseHTTPRequestHandler):
             conn.close()
 
 
-def make_server(host="127.0.0.1", port=10101, upstream="http://127.0.0.1:10100", pack_path=None):
+def make_server(host="127.0.0.1", port=10115, upstream="http://127.0.0.1:10100", pack_path=None):
     state = GateState(upstream=upstream, pack_path=pack_path)
 
     class BoundHandler(GateHandler):
@@ -498,22 +512,6 @@ def make_server(host="127.0.0.1", port=10101, upstream="http://127.0.0.1:10100",
 
     class ReuseServer(ThreadingHTTPServer):
         allow_reuse_address = True
-
-    httpd = ReuseServer((host, port), BoundHandler)
-    return httpd, state
-ream=upstream, pack_path=pack_path)
-
-    class BoundHandler(GateHandler):
-        pass
-
-    BoundHandler.state = state
-
-    class ReuseServer(ThreadingHTTPServer):
-        allow_reuse_address = True
-
-    httpd = ReuseServer((host, port), BoundHandler)
-    return httpd, state
-rue
 
     httpd = ReuseServer((host, port), BoundHandler)
     return httpd, state
